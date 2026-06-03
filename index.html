@@ -72,7 +72,7 @@
       position: fixed;
       top: max(10px, env(safe-area-inset-top, 10px));
       right: max(10px, env(safe-area-inset-right, 10px));
-      z-index: 30;
+      z-index: 101;
       pointer-events: none;
       touch-action: manipulation;
       padding: 8px 12px;
@@ -95,7 +95,7 @@
     #pauseBtn {
       display: none;
       position: fixed;
-      z-index: 30;
+      z-index: 101;
       pointer-events: none;
       touch-action: manipulation;
       padding: 6px 14px;
@@ -219,9 +219,23 @@
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
-    body.title-cursor #screenTap,
     body.gameover-tap #screenTap {
       display: block;
+    }
+    body.title-cursor #screenTap {
+      display: none;
+    }
+
+    #gameUI {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      pointer-events: none;
+    }
+    #gameUI .ui-hit {
+      pointer-events: auto;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(0, 240, 255, 0.25);
     }
 
     #startBtn, #retryBtn {
@@ -230,7 +244,7 @@
       left: 50%;
       bottom: max(18%, 140px);
       transform: translateX(-50%);
-      z-index: 55;
+      z-index: 101;
       pointer-events: auto;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
@@ -337,11 +351,15 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
-  <div id="screenTap" role="button" tabindex="0" aria-label="Tap to start"></div>
-  <button type="button" id="startBtn">START</button>
-  <button type="button" id="retryBtn">PLAY AGAIN</button>
-  <button type="button" id="pauseBtn" aria-label="Pause game" title="Pause (P)">PAUSE</button>
-  <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
+  <div id="screenTap" role="button" tabindex="0" aria-label="Tap to continue"></div>
+  <div id="gameUI">
+    <button type="button" id="startBtn" class="ui-hit"
+      onclick="event.stopPropagation();window.__bbStart&&window.__bbStart();return false;">START</button>
+    <button type="button" id="retryBtn" class="ui-hit"
+      onclick="event.stopPropagation();window.__bbStart&&window.__bbStart();return false;">PLAY AGAIN</button>
+    <button type="button" id="pauseBtn" class="ui-hit" aria-label="Pause game" title="Pause (P)">PAUSE</button>
+    <button type="button" id="fsBtn" class="ui-hit" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
+  </div>
   <div id="iosInstall" role="dialog" aria-labelledby="iosInstallTitle">
     <h2 id="iosInstallTitle">HIDE SAFARI UI</h2>
     <p style="margin:0 0 8px;color:#e8f4ff;">Apple does not let websites remove the address bar inside Safari. Use <strong>Home Screen</strong> mode instead:</p>
@@ -702,20 +720,21 @@
     if (now - lastScreenTapMs < 350) return;
     lastScreenTapMs = now;
     resumeAudio();
-    if (state === 'TITLE' || state === 'GAMEOVER') startGame();
+    launchRun();
   }
 
   function bindStartButton(btn) {
     if (!btn) return;
     const fire = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      if (e) {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
+      }
       lastScreenTapMs = Date.now();
-      if (state === 'TITLE' || state === 'GAMEOVER') startGame();
+      launchRun();
     };
-    btn.addEventListener('touchstart', fire, { passive: false });
-    btn.addEventListener('click', fire);
-    btn.addEventListener('pointerup', (e) => e.stopPropagation());
+    btn.addEventListener('touchend', fire, { passive: false, capture: true });
+    btn.addEventListener('click', fire, true);
   }
 
   // ─── Virtual analog joysticks (mobile twin-stick) ─────────────────────────
@@ -946,9 +965,9 @@
     if (!audioCtx) return false;
     if (audioCtx.state === 'running') return true;
     if (!audioUnlockPromise) {
-      audioUnlockPromise = audioCtx.resume()
-        .then(() => true)
-        .catch(() => false)
+      const resumeP = audioCtx.resume().then(() => true).catch(() => false);
+      const timeoutP = new Promise(r => setTimeout(() => r(false), 400));
+      audioUnlockPromise = Promise.race([resumeP, timeoutP])
         .finally(() => { audioUnlockPromise = null; });
     }
     return audioUnlockPromise;
@@ -1407,24 +1426,27 @@
 
   let startLock = false;
 
-  async function startGame() {
+  function launchRun() {
     if (startLock) return;
     if (state !== 'TITLE' && state !== 'GAMEOVER') return;
     startLock = true;
     try {
-      await resumeAudio();
       if (state === 'GAMEOVER') stopMusicLoops();
       resetGame();
       state = 'PLAYING';
       document.body.classList.remove('title-cursor', 'gameover-tap');
       document.body.classList.add('playing-ui');
       spawnWaveBatch();
-      startMusic();
       updateIosInstallBanner();
       if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
+      resumeAudio().then(() => startMusic());
     } finally {
       startLock = false;
     }
+  }
+
+  function startGame() {
+    launchRun();
   }
 
   function endGame() {
@@ -2168,15 +2190,16 @@
     });
   }
 
-  document.addEventListener('touchend', handleScreenTapEvent, { passive: true, capture: true });
   document.addEventListener('click', (e) => {
-    if (state === 'TITLE' || state === 'GAMEOVER') handleScreenTapEvent(e);
+    if (state === 'GAMEOVER' && !isUiControlTarget(e.target)) handleScreenTapEvent(e);
     else if (state === 'PLAYING' || state === 'PAUSED') resumeAudio();
   }, true);
 
   canvas.addEventListener('click', () => {
     if (state === 'PLAYING' || state === 'PAUSED') resumeAudio();
   });
+
+  window.__bbStart = launchRun;
 
   requestAnimationFrame(loop);
 })();
