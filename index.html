@@ -224,6 +224,58 @@
       display: block;
     }
 
+    #startBtn, #retryBtn {
+      display: none;
+      position: fixed;
+      left: 50%;
+      bottom: max(18%, 140px);
+      transform: translateX(-50%);
+      z-index: 55;
+      pointer-events: auto;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      padding: 16px 44px;
+      min-width: 220px;
+      border: 2px solid #e8f4ff;
+      border-radius: 8px;
+      font: bold 18px "Courier New", monospace;
+      letter-spacing: 0.14em;
+      text-align: center;
+      cursor: pointer;
+    }
+    #startBtn {
+      color: #061018;
+      background: linear-gradient(180deg, #00f0ff 0%, #00b8d4 100%);
+      box-shadow: 0 0 22px rgba(0, 240, 255, 0.55), 0 4px 0 #007799;
+      animation: startBtnPulse 2.2s ease-in-out infinite;
+    }
+    #retryBtn {
+      color: #180818;
+      background: linear-gradient(180deg, #ff66cc 0%, #dd00aa 100%);
+      box-shadow: 0 0 22px rgba(255, 0, 170, 0.5), 0 4px 0 #990066;
+      animation: startBtnPulse 2.2s ease-in-out infinite;
+    }
+    #startBtn:active, #retryBtn:active {
+      transform: translateX(-50%) translateY(2px);
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.4), 0 2px 0 #007799;
+    }
+    #retryBtn:active {
+      box-shadow: 0 0 14px rgba(255, 0, 170, 0.4), 0 2px 0 #990066;
+    }
+    body.title-cursor #startBtn { display: block; }
+    body.gameover-tap #retryBtn { display: block; }
+    @keyframes startBtnPulse {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.15); }
+    }
+    body.portrait-layout #startBtn,
+    body.portrait-layout #retryBtn {
+      bottom: max(20%, 168px);
+      min-width: 240px;
+      padding: 18px 52px;
+      font-size: 20px;
+    }
+
     .joystick-zone {
       position: absolute;
       bottom: max(20px, env(safe-area-inset-bottom, 20px));
@@ -286,6 +338,8 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="screenTap" role="button" tabindex="0" aria-label="Tap to start"></div>
+  <button type="button" id="startBtn">START</button>
+  <button type="button" id="retryBtn">PLAY AGAIN</button>
   <button type="button" id="pauseBtn" aria-label="Pause game" title="Pause (P)">PAUSE</button>
   <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
   <div id="iosInstall" role="dialog" aria-labelledby="iosInstallTitle">
@@ -636,7 +690,7 @@
   }, { passive: false });
 
   function isUiControlTarget(el) {
-    return el && el.closest('#pauseBtn, #fsBtn, #iosInstall button, .joystick-zone');
+    return el && el.closest('#startBtn, #retryBtn, #pauseBtn, #fsBtn, #iosInstall button, .joystick-zone');
   }
 
   let lastScreenTapMs = 0;
@@ -648,8 +702,20 @@
     if (now - lastScreenTapMs < 350) return;
     lastScreenTapMs = now;
     resumeAudio();
-    if (state === 'TITLE') startGame();
-    else returnToTitle();
+    if (state === 'TITLE' || state === 'GAMEOVER') startGame();
+  }
+
+  function bindStartButton(btn) {
+    if (!btn) return;
+    const fire = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      lastScreenTapMs = Date.now();
+      if (state === 'TITLE' || state === 'GAMEOVER') startGame();
+    };
+    btn.addEventListener('touchstart', fire, { passive: false });
+    btn.addEventListener('click', fire);
+    btn.addEventListener('pointerup', (e) => e.stopPropagation());
   }
 
   // ─── Virtual analog joysticks (mobile twin-stick) ─────────────────────────
@@ -1342,13 +1408,15 @@
   let startLock = false;
 
   async function startGame() {
-    if (state !== 'TITLE' || startLock) return;
+    if (startLock) return;
+    if (state !== 'TITLE' && state !== 'GAMEOVER') return;
     startLock = true;
     try {
       await resumeAudio();
+      if (state === 'GAMEOVER') stopMusicLoops();
       resetGame();
       state = 'PLAYING';
-      document.body.classList.remove('title-cursor');
+      document.body.classList.remove('title-cursor', 'gameover-tap');
       document.body.classList.add('playing-ui');
       spawnWaveBatch();
       startMusic();
@@ -1936,8 +2004,8 @@
     const pulse = Math.sin(gameTime * 3) * 0.3 + 0.7;
     ctx.globalAlpha = pulse;
     const startMsg = isTouchDevice
-      ? 'TAP ANYWHERE TO START'
-      : 'PRESS ENTER / SPACE / CLICK TO START';
+      ? 'TAP START BELOW'
+      : 'PRESS START · ENTER · OR CLICK';
     ctx.fillText(startMsg, W / 2, H / 2 + 120);
     ctx.globalAlpha = 1;
 
@@ -1999,7 +2067,7 @@
     ctx.font = '18px Courier New';
     const pulse = Math.sin(gameTime * 3) * 0.3 + 0.7;
     ctx.globalAlpha = pulse;
-    ctx.fillText('PRESS ENTER TO RETRY', W / 2, H / 2 + 180);
+    ctx.fillText('TAP PLAY AGAIN BELOW', W / 2, H / 2 + 180);
     ctx.globalAlpha = 1;
   }
 
@@ -2066,12 +2134,7 @@
     } else if (state === 'GAMEOVER') {
       document.body.classList.add('gameover-tap');
       document.body.classList.remove('playing-ui');
-      if (keys['Enter'] || keys['Space']) {
-        state = 'TITLE';
-        exitGameFullscreen();
-        stopMusicLoops();
-        resetGame();
-      }
+      if (keys['Enter'] || keys['Space']) startGame();
     } else {
       document.body.classList.remove('gameover-tap');
       update(dt);
@@ -2086,6 +2149,8 @@
   }
 
   const screenTapEl = document.getElementById('screenTap');
+  bindStartButton(document.getElementById('startBtn'));
+  bindStartButton(document.getElementById('retryBtn'));
 
   function returnToTitle() {
     state = 'TITLE';
