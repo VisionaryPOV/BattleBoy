@@ -423,6 +423,14 @@
 
   const NODE_NAMES = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'];
   const NODE_ANGLES = [-Math.PI / 2, 0, Math.PI / 2, Math.PI]; // N E S W
+  const NODE_THEME = {
+    ALPHA: { healthy: '#00f0ff', glow: '#00f0ff', label: '#aaf8ff' },
+    BETA:  { healthy: '#aaff00', glow: '#b8ff00', label: '#e8ffb0' },
+    GAMMA: { healthy: '#ffee00', glow: '#ffe600', label: '#fff6a0' },
+    DELTA: { healthy: '#ff66cc', glow: '#ff00aa', label: '#ffc0e8' }
+  };
+  const NODE_INFECT = '#ff2244';
+  const NODE_ASSAULT = '#ff00aa';
 
   // ─── Canvas setup ────────────────────────────────────────────────────────
   const canvas = document.getElementById('gameCanvas');
@@ -1023,6 +1031,54 @@
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
         osc.start(t); osc.stop(t + 0.22);
         break;
+      case 'nodeAlert': {
+        const o2 = audioCtx.createOscillator();
+        const g2 = audioCtx.createGain();
+        o2.type = 'square';
+        o2.frequency.setValueAtTime(880, t);
+        o2.frequency.exponentialRampToValueAtTime(220, t + 0.25);
+        g2.gain.setValueAtTime(0.18, t);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        o2.connect(g2);
+        g2.connect(sfxGain);
+        o2.start(t);
+        o2.stop(t + 0.3);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, t);
+        osc.frequency.linearRampToValueAtTime(90, t + 0.2);
+        g.gain.setValueAtTime(0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.start(t);
+        osc.stop(t + 0.28);
+        break;
+      }
+      case 'nodeInfected':
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(330, t);
+        osc.frequency.setValueAtTime(277, t + 0.08);
+        osc.frequency.setValueAtTime(220, t + 0.16);
+        g.gain.setValueAtTime(0.28, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.start(t);
+        osc.stop(t + 0.38);
+        break;
+      case 'nodeFallen':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(35, t + 0.55);
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        osc.start(t);
+        osc.stop(t + 0.65);
+        break;
+      case 'nodeHack':
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(120 + Math.random() * 40, t);
+        g.gain.setValueAtTime(0.12, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+        osc.start(t);
+        osc.stop(t + 0.07);
+        break;
       case 'powerup':
         osc.type = 'sine';
         osc.frequency.setValueAtTime(523, t);
@@ -1206,7 +1262,11 @@
     y: ARENA.cy + Math.sin(a) * NODE_DIST,
     integrity: 100,
     corrupt: 0,
-    pulse: 0
+    pulse: 0,
+    underAssault: 0,
+    assaultWarned: false,
+    hackSfxCd: 0,
+    bandAlerted: 100
   }));
 
   // ─── High scores ───────────────────────────────────────────────────────────
@@ -1378,11 +1438,42 @@
     musicIntensity = Math.min(1, musicIntensity + 0.02);
   }
 
+  function getNodeStatus(n) {
+    if (n.integrity <= 0) return 'offline';
+    if (n.corrupt > 0.12 || n.underAssault > 0) return 'assault';
+    if (n.integrity < 75) return 'infected';
+    return 'online';
+  }
+
+  function alertNodeIntegrityBand(node, prevIntegrity) {
+    const bands = [75, 50, 25];
+    for (const b of bands) {
+      if (node.bandAlerted > b && node.integrity < b) {
+        node.bandAlerted = b;
+        playSfx('nodeInfected');
+        spawnParticles(node.x, node.y, NODE_ASSAULT, 14, 150);
+        return;
+      }
+    }
+    if (prevIntegrity > 0 && node.integrity <= 0) {
+      node.bandAlerted = 0;
+      playSfx('nodeFallen');
+      spawnParticles(node.x, node.y, NODE_INFECT, 22, 200);
+    }
+  }
+
   function damageNode(node, amt) {
+    const prev = node.integrity;
     node.integrity = Math.max(0, node.integrity - amt);
     node.pulse = 1;
-    playSfx('node');
-    spawnParticles(node.x, node.y, COLORS.yellow, 8, 120);
+    node.corrupt = 1.2;
+    if (node.integrity <= 0 && prev > 0) {
+      alertNodeIntegrityBand(node, prev);
+    } else {
+      playSfx('node');
+      alertNodeIntegrityBand(node, prev);
+      spawnParticles(node.x, node.y, NODE_ASSAULT, 10, 130);
+    }
   }
 
   function damagePlayer(amt) {
@@ -1417,7 +1508,15 @@
     rapidTimer = 0;
     shieldTimer = 0;
     musicIntensity = 0.1;
-    nodes.forEach(n => { n.integrity = 100; n.corrupt = 0; n.pulse = 0; });
+    nodes.forEach(n => {
+      n.integrity = 100;
+      n.corrupt = 0;
+      n.pulse = 0;
+      n.underAssault = 0;
+      n.assaultWarned = false;
+      n.hackSfxCd = 0;
+      n.bandAlerted = 100;
+    });
     bulletPool.active.slice().forEach(b => bulletPool.release(b));
     enemyPool.active.slice().forEach(e => enemyPool.release(e));
     particlePool.active.slice().forEach(p => particlePool.release(p));
@@ -1595,11 +1694,21 @@
           e.x += Math.cos(ang) * speedBase * 0.85 * dt;
           e.y += Math.sin(ang) * speedBase * 0.85 * dt;
           e.corruptCd -= dt;
-          if (dist(e.x, e.y, target.x, target.y) < NODE_RADIUS + e.r) {
+          const inRange = dist(e.x, e.y, target.x, target.y) < NODE_RADIUS + e.r + 4;
+          if (inRange) {
+            target.underAssault = 0.5;
+            if (!target.assaultWarned) {
+              target.assaultWarned = true;
+              playSfx('nodeAlert');
+            }
+            target.hackSfxCd -= dt;
+            if (target.hackSfxCd <= 0) {
+              target.hackSfxCd = 0.45;
+              playSfx('nodeHack');
+            }
             if (e.corruptCd <= 0) {
               e.corruptCd = 1.2;
               damageNode(target, 4 + wave * 0.3);
-              target.corrupt = 1;
             }
           }
         }
@@ -1641,9 +1750,18 @@
     // Nodes passive regen (slow)
     nodes.forEach(n => {
       if (n.pulse > 0) n.pulse -= dt * 2;
-      if (n.corrupt > 0) n.corrupt -= dt;
-      if (n.integrity > 0 && n.integrity < 100 && enemyPool.active.length < 8) {
+      if (n.corrupt > 0) n.corrupt -= dt * 0.65;
+      if (n.underAssault > 0) {
+        n.underAssault -= dt;
+        if (Math.random() < 0.35) {
+          spawnParticles(n.x, n.y, NODE_ASSAULT, 2, 80);
+        }
+      } else {
+        n.assaultWarned = false;
+      }
+      if (n.integrity > 0 && n.integrity < 100 && n.underAssault <= 0 && enemyPool.active.length < 8) {
         n.integrity = Math.min(100, n.integrity + dt * 2);
+        if (n.integrity >= 75 && n.bandAlerted < 75) n.bandAlerted = 100;
       }
     });
 
@@ -1730,53 +1848,132 @@
     ctx.restore();
   }
 
-  function drawNode(n) {
-    const pct = n.integrity / 100;
-    const col = pct > 0.5 ? COLORS.cyan : pct > 0.2 ? COLORS.yellow : COLORS.red;
-    const pulse = 1 + Math.sin(gameTime * 4 + n.pulse * 8) * 0.08 * n.pulse;
-
-    ctx.save();
-    ctx.translate(n.x, n.y);
-    ctx.scale(pulse, pulse);
-
-    // Outer hex
-    neonStroke(col, 2, 14 * pct);
+  function drawNodeHex(r, strokeCol, lineW, glow) {
+    neonStroke(strokeCol, lineW, glow);
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-      const px = Math.cos(a) * NODE_RADIUS;
-      const py = Math.sin(a) * NODE_RADIUS;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
     ctx.stroke();
+  }
 
-    // Integrity arc
-    neonStroke(COLORS.lime, 3, 8);
-    ctx.beginPath();
-    ctx.arc(0, 0, NODE_RADIUS - 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
-    ctx.stroke();
+  function drawNode(n) {
+    const theme = NODE_THEME[n.name] || NODE_THEME.ALPHA;
+    const pct = n.integrity / 100;
+    const status = getNodeStatus(n);
+    const flicker = status === 'assault' ? (Math.sin(gameTime * 22) > 0 ? 1 : 0.55) : 1;
+    const pulse = 1 + Math.sin(gameTime * 4 + n.pulse * 8) * 0.1 * n.pulse
+      + (status === 'assault' ? Math.sin(gameTime * 14) * 0.06 : 0);
 
-    // Core
-    neonFill(col, 10);
-    ctx.beginPath();
-    ctx.arc(0, 0, 8 * pct, 0, Math.PI * 2);
-    ctx.fill();
+    let strokeCol = theme.healthy;
+    let coreCol = theme.glow;
+    let arcCol = COLORS.lime;
+    let statusText = '';
+    let statusCol = theme.label;
 
-    if (n.corrupt > 0) {
-      neonStroke(COLORS.magenta, 1, 20);
+    if (status === 'offline') {
+      strokeCol = '#442233';
+      coreCol = '#220818';
+      arcCol = COLORS.red;
+      statusText = 'OFFLINE';
+      statusCol = COLORS.red;
+    } else if (status === 'assault') {
+      strokeCol = NODE_ASSAULT;
+      coreCol = NODE_INFECT;
+      arcCol = NODE_INFECT;
+      statusText = 'UNDER ATTACK';
+      statusCol = NODE_INFECT;
+    } else if (status === 'infected') {
+      const mix = 1 - pct;
+      strokeCol = mix > 0.5 ? NODE_INFECT : NODE_ASSAULT;
+      coreCol = NODE_INFECT;
+      arcCol = COLORS.orange;
+      statusText = 'INFECTED';
+      statusCol = NODE_INFECT;
+    }
+
+    ctx.save();
+    ctx.translate(n.x, n.y);
+    ctx.scale(pulse, pulse);
+
+    if (status === 'offline') {
+      ctx.globalAlpha = 0.55 + Math.sin(gameTime * 3) * 0.15;
+    }
+
+    drawNodeHex(NODE_RADIUS, strokeCol, status === 'assault' ? 3 : 2, (14 + n.corrupt * 10) * pct * flicker);
+
+    if (status === 'assault' || status === 'infected') {
+      const spin = gameTime * 2.5;
+      neonStroke(NODE_ASSAULT, 2, 18);
+      ctx.setLineDash([6, 8]);
+      ctx.lineDashOffset = -gameTime * 40;
       ctx.beginPath();
-      ctx.arc(0, 0, NODE_RADIUS + 6, 0, Math.PI * 2 * n.corrupt);
+      ctx.arc(0, 0, NODE_RADIUS + 10, spin, spin + Math.PI * 1.2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      resetShadow();
+    }
+
+    if (status !== 'offline') {
+      neonStroke(arcCol, 3, 10);
+      ctx.beginPath();
+      ctx.arc(0, 0, NODE_RADIUS - 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+      ctx.stroke();
+    }
+
+    if (status === 'offline') {
+      neonStroke(COLORS.red, 2, 14);
+      ctx.beginPath();
+      ctx.moveTo(-10, -10);
+      ctx.lineTo(10, 10);
+      ctx.moveTo(10, -10);
+      ctx.lineTo(-10, 10);
+      ctx.stroke();
+    } else if (status === 'assault') {
+      neonFill(NODE_INFECT, 14);
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + gameTime * 3;
+        const px = Math.cos(a) * 9;
+        const py = Math.sin(a) * 9;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      neonFill(coreCol, 12 * flicker);
+      ctx.beginPath();
+      ctx.arc(0, 0, 8 * Math.max(0.35, pct), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (n.corrupt > 0 && status !== 'offline') {
+      neonStroke(NODE_INFECT, 2, 22);
+      ctx.beginPath();
+      ctx.arc(0, 0, NODE_RADIUS + 8, 0, Math.PI * 2 * Math.min(1, n.corrupt));
       ctx.stroke();
     }
 
     resetShadow();
-    ctx.fillStyle = COLORS.white;
-    ctx.font = '11px Courier New';
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 11px Courier New';
     ctx.textAlign = 'center';
+    ctx.fillStyle = statusCol;
     ctx.fillText(n.name, 0, NODE_RADIUS + 16);
-    ctx.fillText(Math.ceil(n.integrity) + '%', 0, -NODE_RADIUS - 8);
+    if (statusText) {
+      ctx.font = '9px Courier New';
+      ctx.fillStyle = NODE_INFECT;
+      ctx.fillText(statusText, 0, NODE_RADIUS + 28);
+    }
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillStyle = status === 'offline' ? COLORS.red : COLORS.white;
+    ctx.fillText(status === 'offline' ? '0%' : Math.ceil(n.integrity) + '%', 0, -NODE_RADIUS - 10);
     ctx.restore();
   }
 
@@ -1971,8 +2168,22 @@
 
     // Node integrity summary
     ctx.textAlign = 'right';
-    ctx.fillStyle = COLORS.magenta;
-    ctx.fillText('NODES ' + Math.ceil(totalIntegrity()) + '/400', W - 16, 28);
+    const assaultN = nodes.filter(n => getNodeStatus(n) === 'assault').length;
+    const infectN = nodes.filter(n => getNodeStatus(n) === 'infected').length;
+    const offN = nodes.filter(n => getNodeStatus(n) === 'offline').length;
+    if (assaultN || infectN || offN) {
+      ctx.fillStyle = NODE_INFECT;
+      ctx.font = 'bold 12px Courier New';
+      let warn = '';
+      if (assaultN) warn += assaultN + ' ATTACKED ';
+      if (infectN) warn += infectN + ' INFECTED ';
+      if (offN) warn += offN + ' OFFLINE';
+      ctx.fillText('⚠ ' + warn.trim(), W - 16, 28);
+    } else {
+      ctx.fillStyle = COLORS.magenta;
+      ctx.font = '16px Courier New';
+      ctx.fillText('NODES ' + Math.ceil(totalIntegrity()) + '/400', W - 16, 28);
+    }
 
     if (terminusActive) {
       ctx.textAlign = 'center';
@@ -2112,6 +2323,29 @@
     }
 
     drawGrid();
+
+    for (const e of enemyPool.active) {
+      if (e.type !== 'hacker') continue;
+      let target = null, best = 1e9;
+      for (const n of nodes) {
+        if (n.integrity <= 0) continue;
+        const d = dist(e.x, e.y, n.x, n.y);
+        if (d < best) { best = d; target = n; }
+      }
+      if (target && target.underAssault > 0) {
+        ctx.save();
+        neonStroke(NODE_ASSAULT, 1, 10);
+        ctx.setLineDash([4, 6]);
+        ctx.lineDashOffset = gameTime * 30;
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        resetShadow();
+        ctx.restore();
+      }
+    }
 
     nodes.forEach(drawNode);
     drawPowerups();
