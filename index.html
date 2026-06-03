@@ -69,6 +69,26 @@
     body.playing-ui #fsBtn { display: block; }
     body.standalone-mode #fsBtn { display: none !important; }
 
+    #pauseBtn {
+      display: none;
+      position: fixed;
+      z-index: 30;
+      pointer-events: auto;
+      touch-action: manipulation;
+      padding: 6px 14px;
+      min-width: 72px;
+      border: 2px solid rgba(255, 238, 0, 0.55);
+      border-radius: 6px;
+      background: rgba(8, 12, 24, 0.88);
+      color: #ffee00;
+      font: bold 11px "Courier New", monospace;
+      letter-spacing: 0.1em;
+      box-shadow: 0 0 12px rgba(255, 238, 0, 0.2);
+      -webkit-tap-highlight-color: transparent;
+    }
+    #pauseBtn:active { background: rgba(255, 238, 0, 0.18); }
+    body.playing-ui #pauseBtn { display: block; }
+
     /* iOS Safari: cannot hide browser chrome in-tab — guide Add to Home Screen */
     #iosInstall {
       display: none;
@@ -195,6 +215,7 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+  <button type="button" id="pauseBtn" aria-label="Pause game" title="Pause (P)">PAUSE</button>
   <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
   <div id="iosInstall" role="dialog" aria-labelledby="iosInstallTitle">
     <h2 id="iosInstallTitle">HIDE SAFARI UI</h2>
@@ -285,7 +306,10 @@
   const isIOSSafariBrowser = isIOS && !isStandalone;
 
   const fsBtn = document.getElementById('fsBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
   const iosInstall = document.getElementById('iosInstall');
+  const PAUSE_HUD_X = 12;
+  const PAUSE_HUD_Y = 38;
   const IOS_INSTALL_KEY = 'battleBoy_iosInstallDismissed';
   const aspect = W / H;
 
@@ -348,6 +372,35 @@
     const on = !!getFullscreenElement();
     document.body.classList.toggle('game-fullscreen', on);
     if (!on) document.body.classList.remove('pseudo-fullscreen');
+  }
+
+  function togglePause() {
+    if (state === 'PLAYING') state = 'PAUSED';
+    else if (state === 'PAUSED') state = 'PLAYING';
+    updatePauseButton();
+  }
+
+  function updatePauseButton() {
+    if (!pauseBtn) return;
+    pauseBtn.textContent = state === 'PAUSED' ? 'RESUME' : 'PAUSE';
+    pauseBtn.setAttribute('aria-label', state === 'PAUSED' ? 'Resume game' : 'Pause game');
+  }
+
+  function positionPauseButton() {
+    if (!pauseBtn) return;
+    const r = canvas.getBoundingClientRect();
+    const sx = r.width / W;
+    const sy = r.height / H;
+    pauseBtn.style.left = (r.left + PAUSE_HUD_X * sx) + 'px';
+    pauseBtn.style.top = (r.top + PAUSE_HUD_Y * sy) + 'px';
+  }
+
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state === 'PLAYING' || state === 'PAUSED') togglePause();
+    });
+    pauseBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
 
   function updateFsButton() {
@@ -445,6 +498,7 @@
     scaleX = canvas.width / W;
     scaleY = canvas.height / H;
     ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    positionPauseButton();
   }
   resize();
 
@@ -453,8 +507,10 @@
   document.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (['Space', 'Enter'].includes(e.code) && state === 'TITLE') startGame();
-    if (e.code === 'KeyP' && state === 'PLAYING') state = 'PAUSED';
-    if (e.code === 'KeyP' && state === 'PAUSED') state = 'PLAYING';
+    if (e.code === 'KeyP' && (state === 'PLAYING' || state === 'PAUSED')) {
+      e.preventDefault();
+      togglePause();
+    }
     if (e.code === 'KeyF' && (state === 'PLAYING' || state === 'PAUSED')) {
       e.preventDefault();
       toggleFullscreen();
@@ -1690,10 +1746,10 @@
     ctx.fillStyle = COLORS.dim;
     ctx.textAlign = 'center';
     const hint = isIOSSafariBrowser
-      ? 'Sticks MOVE/FIRE · HIDE SAFARI = Add to Home Screen'
+      ? 'Sticks MOVE/FIRE · PAUSE below score'
       : isTouchDevice
-        ? 'Sticks MOVE/FIRE · FULLSCREEN top-right'
-        : 'WASD+mouse · F or FULLSCREEN btn · P pause';
+        ? 'Sticks MOVE/FIRE · PAUSE below score'
+        : 'WASD+mouse · PAUSE below score · P key';
     ctx.fillText(hint, W / 2, H - 14);
     ctx.restore();
   }
@@ -1862,6 +1918,8 @@
 
     updateTouchUIVisibility();
     updateIosInstallBanner();
+    updatePauseButton();
+    positionPauseButton();
     render();
     requestAnimationFrame(loop);
   }
