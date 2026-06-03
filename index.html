@@ -99,6 +99,12 @@
     }
     #pauseBtn:active { background: rgba(255, 238, 0, 0.18); }
     body.playing-ui #pauseBtn { display: block; }
+    body.portrait-layout #pauseBtn {
+      padding: 4px 10px;
+      min-width: 56px;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+    }
 
     /* iOS Safari: cannot hide browser chrome in-tab — guide Add to Home Screen */
     #iosInstall {
@@ -166,13 +172,18 @@
     }
     .touch-ui.active { display: block; }
     body.portrait-layout .joystick-zone {
-      bottom: max(12px, env(safe-area-inset-bottom, 12px));
-      width: 118px;
-      height: 132px;
+      bottom: max(10px, env(safe-area-inset-bottom, 10px));
+      width: 108px;
+      height: 120px;
     }
     body.portrait-layout .joystick-base {
-      width: 108px;
-      height: 108px;
+      width: 98px;
+      height: 98px;
+    }
+    body.portrait-layout .joystick-knob {
+      width: 40px;
+      height: 40px;
+      margin: -20px 0 0 -20px;
     }
     .joystick-zone {
       position: absolute;
@@ -513,12 +524,15 @@
 
     let cw, ch;
     if (portrait) {
-      // Fill full screen height; scale to width (side crop) — no black band above sticks
-      ch = sh;
+      // Slightly inset: room for sticks + status bar; ~90% of usable height
+      const topPad = 6;
+      const bottomPad = 148;
+      const usableH = Math.max(200, sh - topPad - bottomPad);
+      ch = usableH * 0.9;
       cw = ch * aspect;
       clearCanvasPosition();
       canvas.style.position = 'fixed';
-      canvas.style.top = '0';
+      canvas.style.top = (topPad + (usableH - ch) * 0.5) + 'px';
       canvas.style.left = ((sw - cw) * 0.5) + 'px';
       canvas.style.margin = '0';
     } else if (isGameFullscreen()) {
@@ -1794,12 +1808,14 @@
 
     ctx.fillStyle = COLORS.dim;
     ctx.textAlign = 'center';
-    const hint = isIOSSafariBrowser
-      ? 'Sticks MOVE/FIRE · PAUSE below score'
-      : isTouchDevice
+    if (!isPortraitPlay()) {
+      const hint = isIOSSafariBrowser
         ? 'Sticks MOVE/FIRE · PAUSE below score'
-        : 'WASD+mouse · PAUSE below score · P key';
-    ctx.fillText(hint, W / 2, H - 14);
+        : isTouchDevice
+          ? 'Sticks MOVE/FIRE · PAUSE below score'
+          : 'WASD+mouse · PAUSE below score · P key';
+      ctx.fillText(hint, W / 2, H - 14);
+    }
     ctx.restore();
   }
 
