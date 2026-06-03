@@ -123,7 +123,8 @@
       font: 12px/1.45 "Courier New", monospace;
       box-shadow: 0 0 24px rgba(255, 238, 0, 0.2);
     }
-    #iosInstall.visible { display: block; }
+    #iosInstall.visible { display: block; pointer-events: none; }
+    #iosInstall.visible button { pointer-events: auto; }
     #iosInstall h2 {
       margin: 0 0 8px;
       font-size: 13px;
@@ -185,6 +186,27 @@
       height: 40px;
       margin: -20px 0 0 -20px;
     }
+
+    /* Full-screen tap target for title / game over (mobile + desktop) */
+    #screenTap {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      pointer-events: auto;
+      touch-action: manipulation;
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: default;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body.title-cursor #screenTap,
+    body.gameover-tap #screenTap {
+      display: block;
+    }
+
     .joystick-zone {
       position: absolute;
       bottom: max(20px, env(safe-area-inset-bottom, 20px));
@@ -246,6 +268,7 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+  <button type="button" id="screenTap" aria-label="Tap to start"> </button>
   <button type="button" id="pauseBtn" aria-label="Pause game" title="Pause (P)">PAUSE</button>
   <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
   <div id="iosInstall" role="dialog" aria-labelledby="iosInstallTitle">
@@ -1282,7 +1305,11 @@
     powerupPool.active.slice().forEach(p => powerupPool.release(p));
   }
 
+  let startLock = false;
+
   async function startGame() {
+    if (state !== 'TITLE' || startLock) return;
+    startLock = true;
     await resumeAudio();
     resetGame();
     state = 'PLAYING';
@@ -1292,6 +1319,7 @@
     startMusic();
     updateIosInstallBanner();
     if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
+    startLock = false;
   }
 
   function endGame() {
@@ -1991,6 +2019,7 @@
 
     if (state === 'TITLE') {
       document.body.classList.add('title-cursor');
+      document.body.classList.remove('gameover-tap');
       document.body.classList.remove('playing-ui');
       if (!getFullscreenElement()) document.body.classList.remove('pseudo-fullscreen');
       if (keys['Enter'] || keys['Space'] || mouseDown) {
@@ -1998,6 +2027,7 @@
         startGame();
       }
     } else if (state === 'GAMEOVER') {
+      document.body.classList.add('gameover-tap');
       document.body.classList.remove('playing-ui');
       if (keys['Enter'] || keys['Space']) {
         state = 'TITLE';
@@ -2006,6 +2036,7 @@
         resetGame();
       }
     } else {
+      document.body.classList.remove('gameover-tap');
       update(dt);
     }
 
@@ -2017,34 +2048,32 @@
     requestAnimationFrame(loop);
   }
 
-  let suppressCanvasClick = false;
+  const screenTapEl = document.getElementById('screenTap');
 
-  canvas.addEventListener('touchend', (e) => {
-    if (e.target !== canvas) return;
-    suppressCanvasClick = true;
-    setTimeout(() => { suppressCanvasClick = false; }, 400);
+  function returnToTitle() {
+    state = 'TITLE';
+    document.body.classList.remove('playing-ui');
+    exitGameFullscreen();
+    stopMusicLoops();
+    resetGame();
+  }
+
+  function onScreenTap() {
+    if (state !== 'TITLE' && state !== 'GAMEOVER') return;
     resumeAudio();
     if (state === 'TITLE') startGame();
-    if (state === 'GAMEOVER') {
-      state = 'TITLE';
-      document.body.classList.remove('playing-ui');
-      exitGameFullscreen();
-      stopMusicLoops();
-      resetGame();
-    }
-  }, { passive: true });
+    else returnToTitle();
+  }
+
+  if (screenTapEl) {
+    screenTapEl.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      onScreenTap();
+    });
+  }
 
   canvas.addEventListener('click', () => {
-    if (suppressCanvasClick) return;
-    resumeAudio();
-    if (state === 'TITLE') startGame();
-    if (state === 'GAMEOVER') {
-      state = 'TITLE';
-      document.body.classList.remove('playing-ui');
-      exitGameFullscreen();
-      stopMusicLoops();
-      resetGame();
-    }
+    if (state === 'PLAYING' || state === 'PAUSED') resumeAudio();
   });
 
   requestAnimationFrame(loop);
