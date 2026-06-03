@@ -1310,16 +1310,19 @@
   async function startGame() {
     if (state !== 'TITLE' || startLock) return;
     startLock = true;
-    await resumeAudio();
-    resetGame();
-    state = 'PLAYING';
-    document.body.classList.remove('title-cursor');
-    document.body.classList.add('playing-ui');
-    spawnWaveBatch();
-    startMusic();
-    updateIosInstallBanner();
-    if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
-    startLock = false;
+    try {
+      await resumeAudio();
+      resetGame();
+      state = 'PLAYING';
+      document.body.classList.remove('title-cursor');
+      document.body.classList.add('playing-ui');
+      spawnWaveBatch();
+      startMusic();
+      updateIosInstallBanner();
+      if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
+    } finally {
+      startLock = false;
+    }
   }
 
   function endGame() {
