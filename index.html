@@ -33,6 +33,17 @@
     body.title-cursor #gameCanvas { cursor: default; }
     body.touch-mode #gameCanvas { cursor: default; }
 
+    /* Portrait phone: canvas fills height, sticks overlay bottom */
+    body.portrait-layout {
+      height: 100dvh;
+      min-height: 100dvh;
+    }
+    body.portrait-layout #gameCanvas {
+      margin: 0;
+      max-width: none;
+      max-height: none;
+    }
+
     body.game-fullscreen,
     body.pseudo-fullscreen {
       display: flex;
@@ -154,6 +165,15 @@
       z-index: 20;
     }
     .touch-ui.active { display: block; }
+    body.portrait-layout .joystick-zone {
+      bottom: max(12px, env(safe-area-inset-bottom, 12px));
+      width: 118px;
+      height: 132px;
+    }
+    body.portrait-layout .joystick-base {
+      width: 108px;
+      height: 108px;
+    }
     .joystick-zone {
       position: absolute;
       bottom: max(20px, env(safe-area-inset-bottom, 20px));
@@ -321,6 +341,12 @@
     return { w: window.innerWidth, h: window.innerHeight };
   }
 
+  /** Tall phone layout — fill vertical screen, crop sides slightly. */
+  function isPortraitPlay() {
+    const { w, h } = viewportSize();
+    return isTouchDevice && h > w * 1.02;
+  }
+
   function shouldShowIosInstall() {
     return isIOSSafariBrowser && !localStorage.getItem(IOS_INSTALL_KEY);
   }
@@ -472,12 +498,31 @@
     fsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
 
+  function clearCanvasPosition() {
+    canvas.style.position = '';
+    canvas.style.top = '';
+    canvas.style.left = '';
+    canvas.style.margin = '';
+  }
+
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     const { w: sw, h: sh } = viewportSize();
+    const portrait = isPortraitPlay();
+    document.body.classList.toggle('portrait-layout', portrait);
+
     let cw, ch;
-    if (isGameFullscreen()) {
-      // Cover the viewport — no letterboxing in fullscreen
+    if (portrait) {
+      // Fill full screen height; scale to width (side crop) — no black band above sticks
+      ch = sh;
+      cw = ch * aspect;
+      clearCanvasPosition();
+      canvas.style.position = 'fixed';
+      canvas.style.top = '0';
+      canvas.style.left = ((sw - cw) * 0.5) + 'px';
+      canvas.style.margin = '0';
+    } else if (isGameFullscreen()) {
+      clearCanvasPosition();
       if (sw / sh > aspect) {
         ch = sh;
         cw = sh * aspect;
@@ -485,12 +530,16 @@
         cw = sw;
         ch = sw / aspect;
       }
+      canvas.style.margin = '0 auto';
     } else {
+      clearCanvasPosition();
       let fitW = sw, fitH = sw / aspect;
       if (fitH > sh) { fitH = sh; fitW = sh * aspect; }
       cw = fitW;
       ch = fitH;
+      canvas.style.margin = '0 auto';
     }
+
     canvas.style.width = cw + 'px';
     canvas.style.height = ch + 'px';
     canvas.width = Math.floor(cw * dpr);
