@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle Boy — Twin-Stick Arena Shooter</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #0a0a12;
+      font-family: "Courier New", monospace;
+    }
+    #gameCanvas {
+      display: block;
+      margin: 0 auto;
+      cursor: crosshair;
+    }
+    body.title-cursor #gameCanvas { cursor: default; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+<script>
+/* ============================================================================
+   BATTLE BOY — Twin-stick arena shooter (Battle-Girl 1997 inspired)
+   Pure vanilla JS · Canvas 2D · Web Audio API · No external assets
+   ============================================================================ */
+
+(function () {
+  'use strict';
+
+  // ─── Constants ───────────────────────────────────────────────────────────
+  const W = 1280, H = 720;
+  const ARENA = { cx: W / 2, cy: H / 2, r: 300 };
+  const NODE_DIST = 220;
+  const NODE_RADIUS = 28;
+  const PLAYER_SPEED = 280;
+  const PLAYER_RADIUS = 14;
+  const BULLET_SPEED = 620;
+  const FIRE_RATE = 0.08;
+  const MAX_ENEMIES = 120;
+  const MAX_BULLETS = 200;
+  const MAX_PARTICLES = 400;
+  const MAX_POWERUPS = 20;
+  const TERMINUS_INTEGRITY = 120;
+  const TERMINUS_NODES_ZERO = 2;
+
+  const COLORS = {
+    bg: '#080810',
+    cyan: '#00f0ff',
+    magenta: '#ff00aa',
+    lime: '#aaff00',
+    yellow: '#ffee00',
+    white: '#e8f4ff',
+    red: '#ff2244',
+    orange: '#ff8800',
+    dim: '#334455'
+  };
+
+  const NODE_NAMES = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'];
+  const NODE_ANGLES = [-Math.PI / 2, 0, Math.PI / 2, Math.PI]; // N E S W
+
+  // ─── Canvas setup ────────────────────────────────────────────────────────
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let dpr = 1;
+  let scaleX = 1, scaleY = 1;
+  let mouseX = W / 2, mouseY = H / 2;
+  let mouseDown = false;
+  let padAimX = 0, padAimY = 0, padMoveX = 0, padMoveY = 0;
+  let padFire = false;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const sw = window.innerWidth, sh = window.innerHeight;
+    const aspect = W / H;
+    let cw = sw, ch = sw / aspect;
+    if (ch > sh) { ch = sh; cw = sh * aspect; }
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    canvas.width = Math.floor(cw * dpr);
+    canvas.height = Math.floor(ch * dpr);
+    scaleX = canvas.width / W;
+    scaleY = canvas.height / H;
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ─── Input ─────────────────────────────────────────────────────────────────
+  const keys = {};
+  document.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (['Space', 'Enter'].includes(e.code) && state === 'TITLE') startGame();
+    if (e.code === 'KeyP' && state === 'PLAYING') state = 'PAUSED';
+    if (e.code === 'KeyP' && state === 'PAUSED') state = 'PLAYING';
+    if (e.code === 'Escape') e.preventDefault();
+  });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) / rect.width * W;
+    mouseY = (e.clientY - rect.top) / rect.height * H;
+  });
+  canvas.addEventListener('mousedown', () => { mouseDown = true; });
+  canvas.addEventListener('mouseup', () => { mouseDown = false; });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  function pollGamepad() {
+    const gp = navigator.getGamepads?.()[0];
+    if (!gp) { padMoveX = padMoveY = padAimX = padAimY = 0; padFire = false; return; }
+    const dead = 0.25;
+    const ax = (v) => Math.abs(v) < dead ? 0 : v;
+    padMoveX = ax(gp.axes[0] ?? 0);
+    padMoveY = ax(gp.axes[1] ?? 0);
+    padAimX = ax(gp.axes[2] ?? gp.axes[0] ?? 0);
+    padAimY = ax(gp.axes[3] ?? gp.axes[1] ?? 0);
+    padFire = gp.buttons[7]?.pressed || gp.buttons[0]?.pressed || gp.buttons[5]?.pressed;
+  }
+
+  function getMoveVector() {
+    let mx = 0, my = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) my -= 1;
+    if (keys['KeyS'] || keys['ArrowDown']) my += 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+    // 8-dir fallback IJKL / numpad
+    if (keys['KeyI'] || keys['Numpad8']) my -= 1;
+    if (keys['KeyK'] || keys['Numpad2']) my += 1;
+    if (keys['KeyJ'] || keys['Numpad4']) mx -= 1;
+    if (keys['KeyL'] || keys['Numpad6']) mx += 1;
+    if (keys['Numpad7']) { mx -= 1; my -= 1; }
+    if (keys['Numpad9']) { mx += 1; my -= 1; }
+    if (keys['Numpad1']) { mx -= 1; my += 1; }
+    if (keys['Numpad3']) { mx += 1; my += 1; }
+    mx += padMoveX;
+    my += padMoveY;
+    const len = Math.hypot(mx, my);
+    if (len > 1) { mx /= len; my /= len; }
+    return { mx, my };
+  }
+
+  function getAimAngle(px, py) {
+    let ax = mouseX - px, ay = mouseY - py;
+    if (Math.hypot(padAimX, padAimY) > 0.3) {
+      ax = padAimX; ay = padAimY;
+    } else {
+      let fx = 0, fy = 0;
+      if (keys['KeyI'] || keys['Numpad8']) fy -= 1;
+      if (keys['KeyK'] || keys['Numpad2']) fy += 1;
+      if (keys['KeyJ'] || keys['Numpad4']) fx -= 1;
+      if (keys['KeyL'] || keys['Numpad6']) fx += 1;
+      if (Math.hypot(fx, fy) > 0) { ax = fx; ay = fy; }
+    }
+    return Math.atan2(ay, ax);
+  }
+
+  function wantsFire() {
+    return mouseDown || padFire || keys['Space'] || keys['Numpad0'];
+  }
+
+  // ─── Object pools ──────────────────────────────────────────────────────────
+  function createPool(factory, max) {
+    const free = [], active = [];
+    for (let i = 0; i < max; i++) free.push(factory());
+    return {
+      spawn(init) {
+        const o = free.pop() || factory();
+        init(o);
+        o.active = true;
+        active.push(o);
+        return o;
+      },
+      release(o) {
+        o.active = false;
+        const i = active.indexOf(o);
+        if (i >= 0) active.splice(i, 1);
+        if (free.length < max * 2) free.push(o);
+      },
+      active, free, clear() { active.length = 0; free.length = 0; }
+    };
+  }
+
+  const bulletPool = createPool(() => ({
+    x: 0, y: 0, vx: 0, vy: 0, life: 0, dmg: 1, friendly: true, active: false, color: COLORS.cyan
+  }), MAX_BULLETS);
+
+  const enemyPool = createPool(() => ({
+    x: 0, y: 0, vx: 0, vy: 0, hp: 1, maxHp: 1, type: 'grunt', r: 12, active: false,
+    shootCd: 0, corruptCd: 0, angle: 0, flash: 0
+  }), MAX_ENEMIES);
+
+  const particlePool = createPool(() => ({
+    x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 2, color: '#fff', active: false
+  }), MAX_PARTICLES);
+
+  const powerupPool = createPool(() => ({
+    x: 0, y: 0, type: 'health', life: 15, active: false, pulse: 0
+  }), MAX_POWERUPS);
+
+  // ─── Audio (Web Audio API) ─────────────────────────────────────────────────
+  let audioCtx = null;
+  let masterGain, musicGain, sfxGain;
+  let musicStarted = false;
+  let musicIntensity = 0;
+  let musicNodes = [];
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.35;
+    masterGain.connect(audioCtx.destination);
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = 0.22;
+    musicGain.connect(masterGain);
+    sfxGain = audioCtx.createGain();
+    sfxGain.gain.value = 0.5;
+    sfxGain.connect(masterGain);
+  }
+
+  function resumeAudio() {
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playSfx(type) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.connect(g);
+    g.connect(sfxGain);
+
+    switch (type) {
+      case 'shoot':
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.exponentialRampToValueAtTime(220, t + 0.06);
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+        osc.start(t); osc.stop(t + 0.07);
+        break;
+      case 'hit':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, t);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.06);
+        break;
+      case 'explode':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.2);
+        g.gain.setValueAtTime(0.35, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.start(t); osc.stop(t + 0.3);
+        break;
+      case 'node':
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, t);
+        osc.frequency.setValueAtTime(110, t + 0.15);
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc.start(t); osc.stop(t + 0.22);
+        break;
+      case 'powerup':
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523, t);
+        osc.frequency.setValueAtTime(1046, t + 0.1);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.start(t); osc.stop(t + 0.16);
+        break;
+      case 'terminus':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(55, t);
+        osc.frequency.linearRampToValueAtTime(30, t + 0.5);
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        osc.start(t); osc.stop(t + 0.65);
+        break;
+      case 'gameover':
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(330, t);
+        osc.frequency.exponentialRampToValueAtTime(55, t + 0.8);
+        g.gain.setValueAtTime(0.3, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+        osc.start(t); osc.stop(t + 0.95);
+        break;
+    }
+  }
+
+  function startMusic() {
+    if (!audioCtx || musicStarted) return;
+    musicStarted = true;
+    const bpm = 128;
+    const beat = 60 / bpm;
+
+    // Kick layer
+    function scheduleKick(start) {
+      const len = 32;
+      for (let i = 0; i < len; i++) {
+        const when = start + i * beat;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, when);
+        osc.frequency.exponentialRampToValueAtTime(40, when + 0.08);
+        g.gain.setValueAtTime(0.5 + musicIntensity * 0.2, when);
+        g.gain.exponentialRampToValueAtTime(0.001, when + 0.12);
+        osc.connect(g);
+        g.connect(musicGain);
+        osc.start(when);
+        osc.stop(when + 0.15);
+      }
+      return start + len * beat;
+    }
+
+    // Hi-hat layer (intensity gated)
+    function scheduleHat(start) {
+      const len = 64;
+      for (let i = 0; i < len; i++) {
+        if (musicIntensity < 0.2 && i % 2) continue;
+        const when = start + i * (beat / 2);
+        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.02, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.exp(-j / 80);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g = audioCtx.createGain();
+        g.gain.value = 0.08 + musicIntensity * 0.12;
+        const filt = audioCtx.createBiquadFilter();
+        filt.type = 'highpass';
+        filt.frequency.value = 6000;
+        src.connect(filt);
+        filt.connect(g);
+        g.connect(musicGain);
+        src.start(when);
+      }
+      return start + len * (beat / 2);
+    }
+
+    // Bass synth layer
+    function scheduleBass(start) {
+      const notes = [55, 55, 73.42, 55, 65.41, 55, 82.41, 55];
+      let t = start;
+      for (let cycle = 0; cycle < 4; cycle++) {
+        for (const freq of notes) {
+          if (musicIntensity < 0.35) { t += beat; continue; }
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          const filt = audioCtx.createBiquadFilter();
+          filt.type = 'lowpass';
+          filt.frequency.value = 400 + musicIntensity * 800;
+          osc.frequency.value = freq;
+          g.gain.setValueAtTime(0.12 + musicIntensity * 0.1, t);
+          g.gain.setValueAtTime(0.001, t + beat * 0.9);
+          osc.connect(filt);
+          filt.connect(g);
+          g.connect(musicGain);
+          osc.start(t);
+          osc.stop(t + beat);
+          t += beat;
+        }
+      }
+      return t;
+    }
+
+    // Arp layer (high intensity)
+    function scheduleArp(start) {
+      const scale = [220, 261.63, 329.63, 392, 440, 523.25];
+      let t = start;
+      for (let i = 0; i < 32; i++) {
+        if (musicIntensity < 0.55) { t += beat / 2; continue; }
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = scale[i % scale.length] * (1 + Math.floor(i / 8) * 0.5);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc.connect(g);
+        g.connect(musicGain);
+        osc.start(t);
+        osc.stop(t + 0.1);
+        t += beat / 2;
+      }
+      return t;
+    }
+
+    function loop() {
+      if (!audioCtx || state === 'TITLE') {
+        setTimeout(loop, 500);
+        return;
+      }
+      const now = audioCtx.currentTime + 0.1;
+      let end = now;
+      end = scheduleKick(end);
+      end = scheduleHat(end);
+      end = scheduleBass(end);
+      end = scheduleArp(end);
+      const delay = Math.max(0, (end - audioCtx.currentTime - 2) * 1000);
+      musicNodes.push(setTimeout(loop, delay || 8000));
+    }
+    loop();
+  }
+
+  function stopMusicLoops() {
+    musicNodes.forEach(id => clearTimeout(id));
+    musicNodes = [];
+    musicStarted = false;
+  }
+
+  // ─── Game state ────────────────────────────────────────────────────────────
+  let state = 'TITLE';
+  let wave = 1;
+  let score = 0;
+  let combo = 0;
+  let comboTimer = 0;
+  let spawnTimer = 0;
+  let waveTimer = 0;
+  let gameTime = 0;
+  let shake = 0;
+  let terminusActive = false;
+  let terminusSpawned = false;
+  let fireCooldown = 0;
+  let invuln = 0;
+  let rapidTimer = 0;
+  let shieldTimer = 0;
+
+  const player = {
+    x: ARENA.cx, y: ARENA.cy,
+    hp: 100, maxHp: 100,
+    angle: 0,
+    speedMult: 1
+  };
+
+  const nodes = NODE_ANGLES.map((a, i) => ({
+    name: NODE_NAMES[i],
+    x: ARENA.cx + Math.cos(a) * NODE_DIST,
+    y: ARENA.cy + Math.sin(a) * NODE_DIST,
+    integrity: 100,
+    corrupt: 0,
+    pulse: 0
+  }));
+
+  // ─── High scores ───────────────────────────────────────────────────────────
+  const HS_KEY = 'battleBoy_highscores_v1';
+
+  function loadHighScores() {
+    try {
+      const raw = localStorage.getItem(HS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function saveHighScore(s) {
+    const list = loadHighScores();
+    const entry = { score: s, date: new Date().toISOString().slice(0, 10), wave };
+    list.push(entry);
+    list.sort((a, b) => b.score - a.score);
+    localStorage.setItem(HS_KEY, JSON.stringify(list.slice(0, 10)));
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+  function dist(ax, ay, bx, by) {
+    return Math.hypot(bx - ax, by - ay);
+  }
+
+  function clampArena(x, y, r) {
+    const dx = x - ARENA.cx, dy = y - ARENA.cy;
+    const d = Math.hypot(dx, dy);
+    const maxD = ARENA.r - r;
+    if (d > maxD) {
+      const s = maxD / d;
+      return { x: ARENA.cx + dx * s, y: ARENA.cy + dy * s };
+    }
+    return { x, y };
+  }
+
+  function spawnParticles(x, y, color, n, speed) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = speed * (0.5 + Math.random());
+      particlePool.spawn(p => {
+        p.x = x; p.y = y;
+        p.vx = Math.cos(a) * sp;
+        p.vy = Math.sin(a) * sp;
+        p.life = p.maxLife = 0.3 + Math.random() * 0.4;
+        p.size = 2 + Math.random() * 3;
+        p.color = color;
+      });
+    }
+  }
+
+  function totalIntegrity() {
+    return nodes.reduce((s, n) => s + n.integrity, 0);
+  }
+
+  function zeroNodes() {
+    return nodes.filter(n => n.integrity <= 0).length;
+  }
+
+  function checkTerminusProtocol() {
+    const ti = totalIntegrity();
+    const z = zeroNodes();
+    return z >= TERMINUS_NODES_ZERO || ti <= TERMINUS_INTEGRITY;
+  }
+
+  // ─── Spawning ──────────────────────────────────────────────────────────────
+  function spawnEnemyAtEdge(type) {
+    const a = Math.random() * Math.PI * 2;
+    const x = ARENA.cx + Math.cos(a) * (ARENA.r + 20);
+    const y = ARENA.cy + Math.sin(a) * (ARENA.r + 20);
+    spawnEnemy(type, x, y);
+  }
+
+  function spawnEnemy(type, x, y) {
+    const waveMult = 1 + (wave - 1) * 0.08;
+    enemyPool.spawn(e => {
+      e.x = x; e.y = y;
+      e.type = type;
+      e.flash = 0;
+      e.shootCd = 1 + Math.random();
+      e.corruptCd = 2 + Math.random() * 2;
+      switch (type) {
+        case 'grunt':
+          e.hp = e.maxHp = Math.ceil(2 * waveMult);
+          e.r = 12;
+          break;
+        case 'hacker':
+          e.hp = e.maxHp = Math.ceil(3 * waveMult);
+          e.r = 14;
+          break;
+        case 'shooter':
+          e.hp = e.maxHp = Math.ceil(4 * waveMult);
+          e.r = 13;
+          break;
+        case 'swarmer':
+          e.hp = e.maxHp = 1;
+          e.r = 8;
+          break;
+        case 'terminus':
+          e.hp = e.maxHp = Math.ceil(40 * waveMult);
+          e.r = 22;
+          break;
+      }
+      e.vx = e.vy = 0;
+    });
+  }
+
+  function pickEnemyType() {
+    const r = Math.random();
+    if (wave >= 6 && r < 0.22) return 'swarmer';
+    if (wave >= 4 && r < 0.35) return 'shooter';
+    if (r < 0.25) return 'hacker';
+    return 'grunt';
+  }
+
+  function spawnWaveBatch() {
+    const count = Math.min(3 + Math.floor(wave * 0.8), 12);
+    for (let i = 0; i < count; i++) {
+      if (enemyPool.active.length >= MAX_ENEMIES - 5) break;
+      spawnEnemyAtEdge(pickEnemyType());
+    }
+    if (wave >= 3) spawnEnemyAtEdge('hacker');
+  }
+
+  function spawnPowerup(x, y) {
+    if (powerupPool.active.length >= MAX_POWERUPS) return;
+    const types = ['health', 'rapid', 'shield', 'node'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    powerupPool.spawn(p => {
+      p.x = x; p.y = y;
+      p.type = type;
+      p.life = 12;
+      p.pulse = 0;
+    });
+  }
+
+  // ─── Combat ────────────────────────────────────────────────────────────────
+  function fireBullet(x, y, angle, friendly, dmg, color, speed) {
+    if (friendly && bulletPool.active.filter(b => b.friendly).length > 80) return;
+    bulletPool.spawn(b => {
+      b.x = x; b.y = y;
+      b.vx = Math.cos(angle) * speed;
+      b.vy = Math.sin(angle) * speed;
+      b.life = friendly ? 1.2 : 2;
+      b.dmg = dmg;
+      b.friendly = friendly;
+      b.color = color;
+    });
+    if (friendly) playSfx('shoot');
+  }
+
+  function damageEnemy(e, dmg) {
+    e.hp -= dmg;
+    e.flash = 0.1;
+    if (e.hp <= 0) killEnemy(e);
+    else playSfx('hit');
+  }
+
+  function killEnemy(e) {
+    const mult = 1 + Math.floor(combo / 5) * 0.1;
+    const pts = { grunt: 100, hacker: 150, shooter: 200, swarmer: 50, terminus: 2000 }[e.type] || 100;
+    score += Math.floor(pts * mult);
+    combo++;
+    comboTimer = 2.5;
+    spawnParticles(e.x, e.y, COLORS.magenta, 12, 180);
+    playSfx('explode');
+    if (Math.random() < 0.12) spawnPowerup(e.x, e.y);
+    enemyPool.release(e);
+    musicIntensity = Math.min(1, musicIntensity + 0.02);
+  }
+
+  function damageNode(node, amt) {
+    node.integrity = Math.max(0, node.integrity - amt);
+    node.pulse = 1;
+    playSfx('node');
+    spawnParticles(node.x, node.y, COLORS.yellow, 8, 120);
+  }
+
+  function damagePlayer(amt) {
+    if (invuln > 0 || shieldTimer > 0) return;
+    player.hp -= amt;
+    invuln = 0.4;
+    shake = 8;
+    playSfx('hit');
+    combo = 0;
+    if (player.hp <= 0) endGame();
+  }
+
+  // ─── Game flow ─────────────────────────────────────────────────────────────
+  function resetGame() {
+    player.x = ARENA.cx;
+    player.y = ARENA.cy;
+    player.hp = player.maxHp = 100;
+    player.angle = 0;
+    player.speedMult = 1;
+    wave = 1;
+    score = 0;
+    combo = 0;
+    comboTimer = 0;
+    spawnTimer = 0;
+    waveTimer = 0;
+    gameTime = 0;
+    shake = 0;
+    terminusActive = false;
+    terminusSpawned = false;
+    fireCooldown = 0;
+    invuln = 0;
+    rapidTimer = 0;
+    shieldTimer = 0;
+    musicIntensity = 0.1;
+    nodes.forEach(n => { n.integrity = 100; n.corrupt = 0; n.pulse = 0; });
+    bulletPool.active.slice().forEach(b => bulletPool.release(b));
+    enemyPool.active.slice().forEach(e => enemyPool.release(e));
+    particlePool.active.slice().forEach(p => particlePool.release(p));
+    powerupPool.active.slice().forEach(p => powerupPool.release(p));
+  }
+
+  function startGame() {
+    resumeAudio();
+    resetGame();
+    state = 'PLAYING';
+    document.body.classList.remove('title-cursor');
+    spawnWaveBatch();
+    startMusic();
+  }
+
+  function endGame() {
+    state = 'GAMEOVER';
+    playSfx('gameover');
+    saveHighScore(score);
+    stopMusicLoops();
+  }
+
+  // ─── Update ────────────────────────────────────────────────────────────────
+  function update(dt) {
+    if (state !== 'PLAYING') return;
+    gameTime += dt;
+    pollGamepad();
+
+    if (comboTimer > 0) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) combo = 0;
+    }
+    if (invuln > 0) invuln -= dt;
+    if (rapidTimer > 0) rapidTimer -= dt;
+    if (shieldTimer > 0) shieldTimer -= dt;
+    if (shake > 0) shake = Math.max(0, shake - dt * 30);
+
+    // Terminus Protocol
+    terminusActive = checkTerminusProtocol();
+    if (terminusActive && !terminusSpawned) {
+      terminusSpawned = true;
+      playSfx('terminus');
+      const a = Math.random() * Math.PI * 2;
+      spawnEnemy('terminus',
+        ARENA.cx + Math.cos(a) * (ARENA.r * 0.5),
+        ARENA.cy + Math.sin(a) * (ARENA.r * 0.5));
+      shake = 15;
+    }
+
+    // Player movement
+    const { mx, my } = getMoveVector();
+    const spd = PLAYER_SPEED * player.speedMult * (1 + (wave - 1) * 0.02);
+    player.x += mx * spd * dt;
+    player.y += my * spd * dt;
+    const clamped = clampArena(player.x, player.y, PLAYER_RADIUS);
+    player.x = clamped.x;
+    player.y = clamped.y;
+    player.angle = getAimAngle(player.x, player.y);
+
+    // Firing
+    const rate = rapidTimer > 0 ? FIRE_RATE * 0.45 : FIRE_RATE;
+    if (wantsFire()) {
+      fireCooldown -= dt;
+      if (fireCooldown <= 0) {
+        fireCooldown = rate;
+        fireBullet(
+          player.x + Math.cos(player.angle) * 18,
+          player.y + Math.sin(player.angle) * 18,
+          player.angle, true, 1 + (rapidTimer > 0 ? 0.5 : 0),
+          rapidTimer > 0 ? COLORS.lime : COLORS.cyan,
+          BULLET_SPEED
+        );
+      }
+    } else {
+      fireCooldown = Math.min(fireCooldown, rate * 0.5);
+    }
+
+    // Wave spawning
+    spawnTimer -= dt;
+    const spawnInterval = Math.max(0.35, 2.2 - wave * 0.12);
+    if (spawnTimer <= 0) {
+      spawnTimer = spawnInterval;
+      if (enemyPool.active.length < 15 + wave * 2) {
+        spawnEnemyAtEdge(pickEnemyType());
+        if (wave >= 5 && Math.random() < 0.3) spawnEnemyAtEdge('swarmer');
+      }
+    }
+    waveTimer += dt;
+    if (waveTimer > 25) {
+      wave++;
+      waveTimer = 0;
+      spawnWaveBatch();
+      musicIntensity = Math.min(1, musicIntensity + 0.08);
+    }
+
+    musicIntensity = Math.min(1, 0.15 + wave * 0.06 + (400 - totalIntegrity()) / 500);
+
+    // Bullets
+    for (let i = bulletPool.active.length - 1; i >= 0; i--) {
+      const b = bulletPool.active[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.life -= dt;
+      if (b.life <= 0 || dist(b.x, b.y, ARENA.cx, ARENA.cy) > ARENA.r + 40) {
+        bulletPool.release(b);
+        continue;
+      }
+      if (b.friendly) {
+        for (const e of enemyPool.active) {
+          if (dist(b.x, b.y, e.x, e.y) < e.r + 4) {
+            damageEnemy(e, b.dmg);
+            bulletPool.release(b);
+            break;
+          }
+        }
+      } else {
+        if (dist(b.x, b.y, player.x, player.y) < PLAYER_RADIUS + 4) {
+          damagePlayer(8);
+          bulletPool.release(b);
+        }
+        for (const n of nodes) {
+          if (n.integrity > 0 && dist(b.x, b.y, n.x, n.y) < NODE_RADIUS) {
+            damageNode(n, 5);
+            bulletPool.release(b);
+            break;
+          }
+        }
+      }
+    }
+
+    // Enemies
+    const speedBase = 90 + wave * 8;
+    for (const e of enemyPool.active) {
+      if (e.flash > 0) e.flash -= dt;
+
+      if (e.type === 'grunt' || e.type === 'terminus') {
+        const tx = e.type === 'terminus' && terminusActive ? ARENA.cx : player.x;
+        const ty = e.type === 'terminus' && terminusActive ? ARENA.cy : player.y;
+        const ang = Math.atan2(ty - e.y, tx - e.x);
+        const sp = (e.type === 'terminus' ? 70 : speedBase) * dt;
+        e.x += Math.cos(ang) * sp;
+        e.y += Math.sin(ang) * sp;
+        if (dist(e.x, e.y, player.x, player.y) < e.r + PLAYER_RADIUS) {
+          damagePlayer(e.type === 'terminus' ? 25 : 12);
+        }
+      }
+
+      if (e.type === 'hacker') {
+        let target = null, best = 1e9;
+        for (const n of nodes) {
+          if (n.integrity <= 0) continue;
+          const d = dist(e.x, e.y, n.x, n.y);
+          if (d < best) { best = d; target = n; }
+        }
+        if (target) {
+          const ang = Math.atan2(target.y - e.y, target.x - e.x);
+          e.x += Math.cos(ang) * speedBase * 0.85 * dt;
+          e.y += Math.sin(ang) * speedBase * 0.85 * dt;
+          e.corruptCd -= dt;
+          if (dist(e.x, e.y, target.x, target.y) < NODE_RADIUS + e.r) {
+            if (e.corruptCd <= 0) {
+              e.corruptCd = 1.2;
+              damageNode(target, 4 + wave * 0.3);
+              target.corrupt = 1;
+            }
+          }
+        }
+        if (dist(e.x, e.y, player.x, player.y) < e.r + PLAYER_RADIUS) damagePlayer(8);
+      }
+
+      if (e.type === 'shooter') {
+        const d = dist(e.x, e.y, player.x, player.y);
+        if (d > 180) {
+          const ang = Math.atan2(player.y - e.y, player.x - e.x);
+          e.x += Math.cos(ang) * speedBase * 0.7 * dt;
+          e.y += Math.sin(ang) * speedBase * 0.7 * dt;
+        }
+        e.shootCd -= dt;
+        if (e.shootCd <= 0 && d < 400) {
+          e.shootCd = 1.4 - wave * 0.05;
+          const ang = Math.atan2(player.y - e.y, player.x - e.x);
+          fireBullet(e.x, e.y, ang, false, 6, COLORS.orange, 320);
+        }
+        if (d < e.r + PLAYER_RADIUS) damagePlayer(10);
+      }
+
+      if (e.type === 'swarmer') {
+        const ang = Math.atan2(player.y - e.y, player.x - e.x);
+        const sp = (speedBase * 1.4) * dt;
+        e.x += Math.cos(ang) * sp;
+        e.y += Math.sin(ang) * sp;
+        if (dist(e.x, e.y, player.x, player.y) < e.r + PLAYER_RADIUS) {
+          damagePlayer(6);
+          e.hp = 0;
+          killEnemy(e);
+        }
+      }
+
+      const c = clampArena(e.x, e.y, e.r);
+      e.x = c.x; e.y = c.y;
+    }
+
+    // Nodes passive regen (slow)
+    nodes.forEach(n => {
+      if (n.pulse > 0) n.pulse -= dt * 2;
+      if (n.corrupt > 0) n.corrupt -= dt;
+      if (n.integrity > 0 && n.integrity < 100 && enemyPool.active.length < 8) {
+        n.integrity = Math.min(100, n.integrity + dt * 2);
+      }
+    });
+
+    // Power-ups
+    for (let i = powerupPool.active.length - 1; i >= 0; i--) {
+      const p = powerupPool.active[i];
+      p.life -= dt;
+      p.pulse += dt * 5;
+      if (p.life <= 0) { powerupPool.release(p); continue; }
+      if (dist(p.x, p.y, player.x, player.y) < PLAYER_RADIUS + 16) {
+        playSfx('powerup');
+        switch (p.type) {
+          case 'health': player.hp = Math.min(player.maxHp, player.hp + 30); break;
+          case 'rapid': rapidTimer = 8; break;
+          case 'shield': shieldTimer = 6; break;
+          case 'node':
+            const weak = nodes.reduce((a, b) => a.integrity < b.integrity ? a : b);
+            weak.integrity = Math.min(100, weak.integrity + 25);
+            break;
+        }
+        score += 50;
+        powerupPool.release(p);
+      }
+    }
+
+    // Particles
+    for (let i = particlePool.active.length - 1; i >= 0; i--) {
+      const p = particlePool.active[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.life -= dt;
+      if (p.life <= 0) particlePool.release(p);
+    }
+  }
+
+  // ─── Rendering helpers (TripTronic neon) ───────────────────────────────────
+  function neonStroke(color, width, blur) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+  }
+
+  function neonFill(color, blur) {
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+  }
+
+  function resetShadow() {
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+  }
+
+  function drawGrid() {
+    ctx.save();
+    neonStroke('#1a2a3a', 1, 0);
+    const step = 40;
+    for (let x = 0; x <= W; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= H; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    resetShadow();
+    // Arena ring
+    neonStroke(COLORS.cyan, 2, 12);
+    ctx.beginPath();
+    ctx.arc(ARENA.cx, ARENA.cy, ARENA.r, 0, Math.PI * 2);
+    ctx.stroke();
+    neonStroke(COLORS.magenta, 1, 6);
+    ctx.beginPath();
+    ctx.arc(ARENA.cx, ARENA.cy, ARENA.r - 8, 0, Math.PI * 2);
+    ctx.stroke();
+    resetShadow();
+    ctx.restore();
+  }
+
+  function drawNode(n) {
+    const pct = n.integrity / 100;
+    const col = pct > 0.5 ? COLORS.cyan : pct > 0.2 ? COLORS.yellow : COLORS.red;
+    const pulse = 1 + Math.sin(gameTime * 4 + n.pulse * 8) * 0.08 * n.pulse;
+
+    ctx.save();
+    ctx.translate(n.x, n.y);
+    ctx.scale(pulse, pulse);
+
+    // Outer hex
+    neonStroke(col, 2, 14 * pct);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const px = Math.cos(a) * NODE_RADIUS;
+      const py = Math.sin(a) * NODE_RADIUS;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Integrity arc
+    neonStroke(COLORS.lime, 3, 8);
+    ctx.beginPath();
+    ctx.arc(0, 0, NODE_RADIUS - 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+    ctx.stroke();
+
+    // Core
+    neonFill(col, 10);
+    ctx.beginPath();
+    ctx.arc(0, 0, 8 * pct, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (n.corrupt > 0) {
+      neonStroke(COLORS.magenta, 1, 20);
+      ctx.beginPath();
+      ctx.arc(0, 0, NODE_RADIUS + 6, 0, Math.PI * 2 * n.corrupt);
+      ctx.stroke();
+    }
+
+    resetShadow();
+    ctx.fillStyle = COLORS.white;
+    ctx.font = '11px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.name, 0, NODE_RADIUS + 16);
+    ctx.fillText(Math.ceil(n.integrity) + '%', 0, -NODE_RADIUS - 8);
+    ctx.restore();
+  }
+
+  function drawEnemy(e) {
+    const flash = e.flash > 0;
+    let col = COLORS.magenta;
+    if (e.type === 'hacker') col = COLORS.lime;
+    if (e.type === 'shooter') col = COLORS.orange;
+    if (e.type === 'swarmer') col = COLORS.yellow;
+    if (e.type === 'terminus') col = COLORS.red;
+    if (flash) col = COLORS.white;
+
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    neonStroke(col, 2, e.type === 'terminus' ? 24 : 10);
+    ctx.beginPath();
+    if (e.type === 'hacker') {
+      ctx.moveTo(0, -e.r);
+      ctx.lineTo(e.r, 0);
+      ctx.lineTo(0, e.r);
+      ctx.lineTo(-e.r, 0);
+      ctx.closePath();
+    } else if (e.type === 'shooter') {
+      ctx.rect(-e.r, -e.r, e.r * 2, e.r * 2);
+    } else if (e.type === 'terminus') {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r2 = i % 2 ? e.r * 0.7 : e.r;
+        const px = Math.cos(a) * r2, py = Math.sin(a) * r2;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    } else {
+      ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+
+    if (e.maxHp > 1) {
+      resetShadow();
+      ctx.fillStyle = '#223';
+      ctx.fillRect(-e.r, e.r + 4, e.r * 2, 3);
+      ctx.fillStyle = col;
+      ctx.fillRect(-e.r, e.r + 4, e.r * 2 * (e.hp / e.maxHp), 3);
+    }
+    resetShadow();
+    ctx.restore();
+  }
+
+  function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+
+    const col = invuln > 0 && Math.floor(gameTime * 20) % 2 ? COLORS.white : COLORS.cyan;
+    if (shieldTimer > 0) {
+      neonStroke(COLORS.lime, 2, 18);
+      ctx.beginPath();
+      ctx.arc(0, 0, PLAYER_RADIUS + 8 + Math.sin(gameTime * 8) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    neonFill(col, 14);
+    neonStroke(col, 2, 12);
+    // Ship body — vector triangle
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(-10, -10);
+    ctx.lineTo(-6, 0);
+    ctx.lineTo(-10, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    neonStroke(rapidTimer > 0 ? COLORS.lime : COLORS.magenta, 1, 6);
+    ctx.beginPath();
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(-14, 0);
+    ctx.stroke();
+
+    resetShadow();
+    ctx.restore();
+  }
+
+  function drawBullets() {
+    for (const b of bulletPool.active) {
+      neonFill(b.color, 8);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.friendly ? 3 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      neonStroke(b.color, 1, 6);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03);
+      ctx.stroke();
+    }
+    resetShadow();
+  }
+
+  function drawParticles() {
+    for (const p of particlePool.active) {
+      const a = p.life / p.maxLife;
+      ctx.globalAlpha = a;
+      neonFill(p.color, 6);
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    resetShadow();
+  }
+
+  function drawPowerups() {
+    const icons = { health: '+', rapid: '»', shield: '◯', node: '◇' };
+    const cols = { health: COLORS.lime, rapid: COLORS.cyan, shield: COLORS.yellow, node: COLORS.magenta };
+    for (const p of powerupPool.active) {
+      const s = 1 + Math.sin(p.pulse) * 0.15;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(s, s);
+      neonStroke(cols[p.type], 2, 12);
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = cols[p.type];
+      ctx.font = 'bold 14px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icons[p.type], 0, 1);
+      ctx.restore();
+    }
+    resetShadow();
+  }
+
+  function drawLogo(cx, cy, scale) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    const title = 'BATTLE';
+    const sub = 'BOY';
+    ctx.font = 'bold 72px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Layered glow strokes
+    for (let i = 3; i >= 0; i--) {
+      neonStroke(i % 2 ? COLORS.magenta : COLORS.cyan, 4 - i, 8 + i * 6);
+      ctx.strokeText(title, 0, -30);
+      neonStroke(i % 2 ? COLORS.cyan : COLORS.lime, 3, 6 + i * 4);
+      ctx.strokeText(sub, 0, 40);
+    }
+    neonFill(COLORS.white, 4);
+    ctx.fillText(title, 0, -30);
+    neonFill(COLORS.yellow, 4);
+    ctx.fillText(sub, 0, 40);
+
+    // Decorative lines
+    neonStroke(COLORS.cyan, 1, 8);
+    ctx.beginPath();
+    ctx.moveTo(-180, 70);
+    ctx.lineTo(180, 70);
+    ctx.stroke();
+    resetShadow();
+    ctx.restore();
+  }
+
+  function drawHUD() {
+    ctx.save();
+    resetShadow();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, W, 48);
+    ctx.fillRect(0, H - 36, W, 36);
+
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = COLORS.cyan;
+    ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + score, 16, 28);
+    ctx.fillText('WAVE ' + wave, 200, 28);
+    if (combo > 1) {
+      ctx.fillStyle = COLORS.yellow;
+      ctx.fillText('COMBO x' + combo, 320, 28);
+    }
+
+    // HP bar
+    ctx.fillStyle = COLORS.dim;
+    ctx.fillRect(500, 14, 200, 20);
+    ctx.fillStyle = player.hp > 30 ? COLORS.lime : COLORS.red;
+    ctx.fillRect(500, 14, 200 * (player.hp / player.maxHp), 20);
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.strokeRect(500, 14, 200, 20);
+    ctx.fillStyle = COLORS.white;
+    ctx.fillText('HULL', 710, 28);
+
+    // Node integrity summary
+    ctx.textAlign = 'right';
+    ctx.fillStyle = COLORS.magenta;
+    ctx.fillText('NODES ' + Math.ceil(totalIntegrity()) + '/400', W - 16, 28);
+
+    if (terminusActive) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = COLORS.red;
+      ctx.font = 'bold 14px Courier New';
+      const blink = Math.sin(gameTime * 10) > 0;
+      if (blink) ctx.fillText('⚠ TERMINUS PROTOCOL ACTIVE ⚠', W / 2, 28);
+    }
+
+    // Power-up indicators
+    ctx.textAlign = 'left';
+    ctx.font = '13px Courier New';
+    let y = H - 14;
+    if (rapidTimer > 0) { ctx.fillStyle = COLORS.lime; ctx.fillText('RAPID ' + rapidTimer.toFixed(1) + 's', 16, y); }
+    if (shieldTimer > 0) { ctx.fillStyle = COLORS.yellow; ctx.fillText('SHIELD ' + shieldTimer.toFixed(1) + 's', 120, y); }
+
+    ctx.fillStyle = COLORS.dim;
+    ctx.textAlign = 'center';
+    ctx.fillText('WASD move · MOUSE aim · HOLD LMB fire · IJKL/numpad aim fallback · P pause', W / 2, H - 14);
+    ctx.restore();
+  }
+
+  function drawTitle() {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, W, H);
+    drawGrid();
+
+    // Animated background vectors
+    for (let i = 0; i < 12; i++) {
+      const a = gameTime * 0.3 + i * 0.52;
+      const r = 120 + i * 18;
+      neonStroke(i % 3 === 0 ? COLORS.cyan : i % 3 === 1 ? COLORS.magenta : COLORS.lime, 1, 6);
+      ctx.beginPath();
+      ctx.arc(ARENA.cx + Math.cos(a) * r * 0.5, ARENA.cy + Math.sin(a) * r * 0.5, 20 + i * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    resetShadow();
+
+    drawLogo(W / 2, H / 2 - 60, 1);
+
+    ctx.font = '18px Courier New';
+    ctx.fillStyle = COLORS.white;
+    ctx.textAlign = 'center';
+    const pulse = Math.sin(gameTime * 3) * 0.3 + 0.7;
+    ctx.globalAlpha = pulse;
+    ctx.fillText('PRESS ENTER / SPACE / CLICK TO START', W / 2, H / 2 + 120);
+    ctx.globalAlpha = 1;
+
+    ctx.font = '14px Courier New';
+    ctx.fillStyle = COLORS.dim;
+    ctx.fillText('Defend four Function Nodes · Twin-stick arena combat · TripTronic vectors', W / 2, H / 2 + 155);
+
+    // High scores
+    const hs = loadHighScores();
+    if (hs.length) {
+      ctx.fillStyle = COLORS.yellow;
+      ctx.font = '16px Courier New';
+      ctx.fillText('— HIGH SCORES —', W / 2, H / 2 + 200);
+      hs.slice(0, 5).forEach((e, i) => {
+        ctx.fillStyle = COLORS.cyan;
+        ctx.fillText((i + 1) + '. ' + e.score + '  (' + e.date + ')', W / 2, H / 2 + 225 + i * 22);
+      });
+    }
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = 'rgba(8,8,16,0.75)';
+    ctx.fillRect(0, 0, W, H);
+
+    drawLogo(W / 2, H / 2 - 100, 0.7);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 36px Courier New';
+    neonFill(COLORS.red, 12);
+    ctx.fillText('GAME OVER', W / 2, H / 2 + 20);
+    resetShadow();
+
+    ctx.font = '24px Courier New';
+    ctx.fillStyle = COLORS.yellow;
+    ctx.fillText('FINAL SCORE: ' + score, W / 2, H / 2 + 70);
+    ctx.fillStyle = COLORS.cyan;
+    ctx.fillText('WAVES SURVIVED: ' + wave, W / 2, H / 2 + 100);
+
+    const hs = loadHighScores();
+    if (hs.length && hs[0].score === score) {
+      ctx.fillStyle = COLORS.lime;
+      ctx.fillText('★ NEW HIGH SCORE ★', W / 2, H / 2 + 130);
+    }
+
+    ctx.fillStyle = COLORS.white;
+    ctx.font = '18px Courier New';
+    const pulse = Math.sin(gameTime * 3) * 0.3 + 0.7;
+    ctx.globalAlpha = pulse;
+    ctx.fillText('PRESS ENTER TO RETRY', W / 2, H / 2 + 180);
+    ctx.globalAlpha = 1;
+  }
+
+  function render() {
+    ctx.save();
+    let sx = 0, sy = 0;
+    if (shake > 0) {
+      sx = (Math.random() - 0.5) * shake;
+      sy = (Math.random() - 0.5) * shake;
+    }
+    ctx.translate(sx, sy);
+
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+
+    if (state === 'TITLE') {
+      drawTitle();
+      ctx.restore();
+      return;
+    }
+
+    drawGrid();
+
+    nodes.forEach(drawNode);
+    drawPowerups();
+    drawParticles();
+    drawBullets();
+    enemyPool.active.forEach(drawEnemy);
+    drawPlayer();
+    drawHUD();
+
+    if (state === 'PAUSED') {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.font = 'bold 32px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', W / 2, H / 2);
+    }
+
+    if (state === 'GAMEOVER') drawGameOver();
+
+    ctx.restore();
+  }
+
+  // ─── Main loop ─────────────────────────────────────────────────────────────
+  let lastTime = performance.now();
+  gameTime = 0;
+
+  function loop(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    gameTime += dt;
+
+    if (state === 'TITLE') {
+      document.body.classList.add('title-cursor');
+      if (keys['Enter'] || keys['Space'] || mouseDown) {
+        mouseDown = false;
+        startGame();
+      }
+    } else if (state === 'GAMEOVER') {
+      if (keys['Enter'] || keys['Space']) {
+        state = 'TITLE';
+        stopMusicLoops();
+        resetGame();
+      }
+    } else {
+      update(dt);
+    }
+
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  canvas.addEventListener('click', () => {
+    resumeAudio();
+    if (state === 'TITLE') startGame();
+    if (state === 'GAMEOVER') {
+      state = 'TITLE';
+      stopMusicLoops();
+      resetGame();
+    }
+  });
+
+  requestAnimationFrame(loop);
+})();
+</script>
+
+<!--
+================================================================================
+HOW TO PLAY
+================================================================================
+• Goal: Survive endless waves and protect four Function Nodes (ALPHA, BETA,
+  GAMMA, DELTA) positioned north/east/south/west of the arena center.
+• Move with WASD or Arrow keys. Aim with the mouse; hold Left Mouse Button to
+  fire. Keyboard aim fallback: IJKL or numpad (including diagonals 7/9/1/3).
+  Gamepad: left stick move, right stick aim, RT/RB/A to fire.
+• Enemies: Grunts chase you; Hackers corrupt nodes; Shooters (wave 4+) fire at
+  you; Swarmers (wave 6+) rush in packs. Kill enemies for score and combos.
+• Terminus Protocol triggers when 2+ nodes hit 0% integrity OR total node
+  integrity ≤ 120. A powerful Terminus elite spawns—destroy it!
+• Collect power-ups: health (+), rapid fire (»), shield (◯), node repair (◇).
+• Pause with P. Press Enter/Space/click on title or game over screens.
+
+================================================================================
+ASSUMPTIONS
+================================================================================
+• Single-player local session; high scores stored in localStorage (top 10).
+• "Battle-Girl (1997)" inspiration = twin-stick arena + node defense + vector
+  neon aesthetic, not a faithful remake.
+• Audio requires user gesture (click/key) to unlock AudioContext per browser
+  policy. Music layers schedule procedurally and rebuild as intensity rises.
+• Arena is circular; player and enemies clamp inside the ring.
+• Nodes slowly regenerate when few enemies remain (light passive recovery).
+• No mobile touch controls in v1—mouse/keyboard/gamepad only.
+
+================================================================================
+V2 IMPROVEMENTS
+================================================================================
+• Touch twin-stick virtual controls for mobile
+• Boss variety per 5 waves, multiplayer co-op
+• Screen shake options, colorblind palettes, reduced motion mode
+• Separate music stems with Web Audio scheduled buffers (cleaner loops)
+• Achievements, daily challenges, enemy telegraphs and wind-up animations
+• WebGL shader bloom pass for stronger neon; particle trail pooling tiers
+• Save/resume run state; online leaderboard API
+================================================================================
+-->
+</body>
+</html>
