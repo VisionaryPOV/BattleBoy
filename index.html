@@ -28,6 +28,41 @@
     body.title-cursor #gameCanvas { cursor: default; }
     body.touch-mode #gameCanvas { cursor: default; }
 
+    body.game-fullscreen,
+    body.pseudo-fullscreen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a12;
+    }
+    body.game-fullscreen #gameCanvas,
+    body.pseudo-fullscreen #gameCanvas {
+      margin: 0;
+      max-width: 100vw;
+      max-height: 100vh;
+    }
+
+    #fsBtn {
+      display: none;
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top, 10px));
+      right: max(10px, env(safe-area-inset-right, 10px));
+      z-index: 30;
+      pointer-events: auto;
+      touch-action: manipulation;
+      padding: 8px 12px;
+      border: 2px solid rgba(0, 240, 255, 0.55);
+      border-radius: 6px;
+      background: rgba(8, 12, 24, 0.85);
+      color: #00f0ff;
+      font: 11px "Courier New", monospace;
+      letter-spacing: 0.08em;
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+      -webkit-tap-highlight-color: transparent;
+    }
+    #fsBtn:active { background: rgba(0, 240, 255, 0.2); }
+    body.playing-ui #fsBtn { display: block; }
+
     /* Virtual twin-stick overlays (phone / tablet) */
     .touch-ui {
       display: none;
@@ -98,6 +133,7 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+  <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
   <div id="touchUI" class="touch-ui" aria-hidden="true">
     <div id="stickLeft" class="joystick-zone joystick-left">
       <div class="joystick-base"><div class="joystick-knob"></div></div>
@@ -165,12 +201,97 @@
     || 'ontouchstart' in window
     || navigator.maxTouchPoints > 0;
 
+  const fsBtn = document.getElementById('fsBtn');
+  const aspect = W / H;
+
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function isGameFullscreen() {
+    return !!getFullscreenElement() || document.body.classList.contains('pseudo-fullscreen');
+  }
+
+  function syncFullscreenClass() {
+    const on = !!getFullscreenElement();
+    document.body.classList.toggle('game-fullscreen', on);
+    if (!on) document.body.classList.remove('pseudo-fullscreen');
+  }
+
+  function updateFsButton() {
+    if (!fsBtn) return;
+    const on = isGameFullscreen();
+    fsBtn.textContent = on ? 'EXIT FULL' : 'FULLSCREEN';
+    fsBtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+  }
+
+  async function enterGameFullscreen() {
+    const el = document.documentElement;
+    try {
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else throw new Error('no API');
+    } catch (_) {
+      document.body.classList.add('pseudo-fullscreen');
+    }
+    syncFullscreenClass();
+    resize();
+    updateFsButton();
+  }
+
+  async function exitGameFullscreen() {
+    document.body.classList.remove('pseudo-fullscreen');
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch (_) {}
+    syncFullscreenClass();
+    resize();
+    updateFsButton();
+  }
+
+  async function toggleFullscreen() {
+    if (isGameFullscreen()) await exitGameFullscreen();
+    else await enterGameFullscreen();
+  }
+
+  function onFullscreenChange() {
+    syncFullscreenClass();
+    resize();
+    updateFsButton();
+  }
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+  window.addEventListener('resize', resize);
+  if (fsBtn) {
+    fsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resumeAudio();
+      toggleFullscreen();
+    });
+    fsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const sw = window.innerWidth, sh = window.innerHeight;
-    const aspect = W / H;
-    let cw = sw, ch = sw / aspect;
-    if (ch > sh) { ch = sh; cw = sh * aspect; }
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
+    let cw, ch;
+    if (isGameFullscreen()) {
+      // Cover the viewport — no letterboxing in fullscreen
+      if (sw / sh > aspect) {
+        ch = sh;
+        cw = sh * aspect;
+      } else {
+        cw = sw;
+        ch = sw / aspect;
+      }
+    } else {
+      let fitW = sw, fitH = sw / aspect;
+      if (fitH > sh) { fitH = sh; fitW = sh * aspect; }
+      cw = fitW;
+      ch = fitH;
+    }
     canvas.style.width = cw + 'px';
     canvas.style.height = ch + 'px';
     canvas.width = Math.floor(cw * dpr);
@@ -179,7 +300,6 @@
     scaleY = canvas.height / H;
     ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   }
-  window.addEventListener('resize', resize);
   resize();
 
   // ─── Input ─────────────────────────────────────────────────────────────────
@@ -189,7 +309,11 @@
     if (['Space', 'Enter'].includes(e.code) && state === 'TITLE') startGame();
     if (e.code === 'KeyP' && state === 'PLAYING') state = 'PAUSED';
     if (e.code === 'KeyP' && state === 'PAUSED') state = 'PLAYING';
-    if (e.code === 'Escape') e.preventDefault();
+    if (e.code === 'KeyF' && (state === 'PLAYING' || state === 'PAUSED')) {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+    if (e.code === 'Escape' && !getFullscreenElement()) e.preventDefault();
   });
   document.addEventListener('keyup', e => { keys[e.code] = false; });
   canvas.addEventListener('mousemove', e => {
@@ -870,12 +994,16 @@
     resetGame();
     state = 'PLAYING';
     document.body.classList.remove('title-cursor');
+    document.body.classList.add('playing-ui');
     spawnWaveBatch();
     startMusic();
+    if (isTouchDevice) enterGameFullscreen();
   }
 
   function endGame() {
     state = 'GAMEOVER';
+    document.body.classList.remove('playing-ui');
+    exitGameFullscreen();
     playSfx('gameover');
     saveHighScore(score);
     stopMusicLoops();
@@ -1415,8 +1543,8 @@
     ctx.fillStyle = COLORS.dim;
     ctx.textAlign = 'center';
     const hint = isTouchDevice
-      ? 'Left stick MOVE · Right stick AIM+FIRE · Desktop: WASD + mouse'
-      : 'WASD move · MOUSE aim · HOLD LMB fire · IJKL/numpad aim fallback · P pause';
+      ? 'Sticks MOVE/FIRE · FULLSCREEN btn top-right'
+      : 'WASD+mouse · F or FULLSCREEN btn · P pause';
     ctx.fillText(hint, W / 2, H - 14);
     ctx.restore();
   }
@@ -1455,7 +1583,10 @@
     ctx.fillText('Defend four Function Nodes · Twin-stick arena combat · TripTronic vectors', W / 2, H / 2 + 155);
     if (isTouchDevice) {
       ctx.fillStyle = COLORS.cyan;
-      ctx.fillText('Mobile: left stick MOVE · right stick AIM + FIRE', W / 2, H / 2 + 178);
+      ctx.fillText('Mobile: twin sticks · auto fullscreen in-game · FULLSCREEN button', W / 2, H / 2 + 178);
+    } else {
+      ctx.fillStyle = COLORS.dim;
+      ctx.fillText('Press F during play for fullscreen', W / 2, H / 2 + 178);
     }
 
     // High scores
@@ -1556,13 +1687,17 @@
 
     if (state === 'TITLE') {
       document.body.classList.add('title-cursor');
+      document.body.classList.remove('playing-ui');
+      if (!getFullscreenElement()) document.body.classList.remove('pseudo-fullscreen');
       if (keys['Enter'] || keys['Space'] || mouseDown) {
         mouseDown = false;
         startGame();
       }
     } else if (state === 'GAMEOVER') {
+      document.body.classList.remove('playing-ui');
       if (keys['Enter'] || keys['Space']) {
         state = 'TITLE';
+        exitGameFullscreen();
         stopMusicLoops();
         resetGame();
       }
@@ -1580,6 +1715,8 @@
     if (state === 'TITLE') startGame();
     if (state === 'GAMEOVER') {
       state = 'TITLE';
+      document.body.classList.remove('playing-ui');
+      exitGameFullscreen();
       stopMusicLoops();
       resetGame();
     }
@@ -1591,6 +1728,8 @@
     if (state === 'TITLE') startGame();
     if (state === 'GAMEOVER') {
       state = 'TITLE';
+      document.body.classList.remove('playing-ui');
+      exitGameFullscreen();
       stopMusicLoops();
       resetGame();
     }
@@ -1616,7 +1755,9 @@ HOW TO PLAY
 • Terminus Protocol triggers when 2+ nodes hit 0% integrity OR total node
   integrity ≤ 120. A powerful Terminus elite spawns—destroy it!
 • Collect power-ups: health (+), rapid fire (»), shield (◯), node repair (◇).
-• Pause with P. Press Enter/Space/click on title or game over screens.
+• Pause with P. Fullscreen: F key or FULLSCREEN button (top-right); auto on
+  mobile when a run starts. Exit with button, F, or Escape.
+• Press Enter/Space/click on title or game over screens.
 
 ================================================================================
 ASSUMPTIONS

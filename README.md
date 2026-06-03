@@ -19,7 +19,8 @@ Open the **Play online** link above in Safari.
 
 1. **Tap** the screen to start (unlocks audio).
 2. **Left stick** — move; **right stick** — aim and fire.
-3. Optional: **Share → Add to Home Screen** for a full-screen shortcut.
+3. The game **enters fullscreen automatically** when a run starts (or tap **FULLSCREEN** top-right).
+4. Optional: **Share → Add to Home Screen** for an app-like shortcut without Safari chrome.
 
 <details>
 <summary>Local Wi‑Fi server (optional dev fallback)</summary>
@@ -44,6 +45,7 @@ On iPhone Safari: `http://YOUR_MAC_IP:8080` (same Wi‑Fi as your Mac).
 | **IJKL** / **Numpad** | 8-direction fire (keyboard-only fallback) |
 | **Gamepad** | Left stick move, right stick aim, **RT** fire |
 | **Tap** / **Enter** / **Space** | Start / restart |
+| **F** / **FULLSCREEN** button | Toggle fullscreen (during play) |
 | **P** | Pause (desktop) |
 
 ## Objective
