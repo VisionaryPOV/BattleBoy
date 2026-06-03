@@ -1,0 +1,19 @@
+{
+  "name": "Battle Boy",
+  "short_name": "Battle Boy",
+  "description": "Twin-stick arena shooter — protect The Nexus",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0a12",
+  "theme_color": "#0a0a12",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

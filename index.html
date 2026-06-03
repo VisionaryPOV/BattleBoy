@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Battle Boy">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0a12">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Battle Boy — Twin-Stick Arena Shooter</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,6 +67,63 @@
     }
     #fsBtn:active { background: rgba(0, 240, 255, 0.2); }
     body.playing-ui #fsBtn { display: block; }
+    body.standalone-mode #fsBtn { display: none !important; }
+
+    /* iOS Safari: cannot hide browser chrome in-tab — guide Add to Home Screen */
+    #iosInstall {
+      display: none;
+      position: fixed;
+      left: max(12px, env(safe-area-inset-left, 12px));
+      right: max(12px, env(safe-area-inset-right, 12px));
+      top: max(12px, env(safe-area-inset-top, 12px));
+      z-index: 40;
+      pointer-events: auto;
+      padding: 14px 16px 12px;
+      border: 2px solid rgba(255, 238, 0, 0.7);
+      border-radius: 10px;
+      background: rgba(12, 10, 28, 0.94);
+      color: #ffe600;
+      font: 12px/1.45 "Courier New", monospace;
+      box-shadow: 0 0 24px rgba(255, 238, 0, 0.2);
+    }
+    #iosInstall.visible { display: block; }
+    #iosInstall h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      letter-spacing: 0.1em;
+      color: #00f0ff;
+    }
+    #iosInstall ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+      color: #e8f4ff;
+    }
+    #iosInstall li { margin-bottom: 4px; }
+    #iosInstall .ios-install-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #iosInstall button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px;
+      border-radius: 6px;
+      font: 11px "Courier New", monospace;
+      letter-spacing: 0.06em;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #iosInstallGotIt {
+      border: 2px solid rgba(0, 240, 255, 0.55);
+      background: rgba(0, 240, 255, 0.12);
+      color: #00f0ff;
+    }
+    #iosInstallShare {
+      border: 2px solid rgba(255, 238, 0, 0.6);
+      background: rgba(255, 238, 0, 0.12);
+      color: #ffe600;
+    }
 
     /* Virtual twin-stick overlays (phone / tablet) */
     .touch-ui {
@@ -134,6 +196,19 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <button type="button" id="fsBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
+  <div id="iosInstall" role="dialog" aria-labelledby="iosInstallTitle">
+    <h2 id="iosInstallTitle">HIDE SAFARI UI</h2>
+    <p style="margin:0 0 8px;color:#e8f4ff;">Apple does not let websites remove the address bar inside Safari. Use <strong>Home Screen</strong> mode instead:</p>
+    <ol>
+      <li>Tap <strong>Share</strong> (↑) in Safari’s bottom bar</li>
+      <li>Scroll → tap <strong>Add to Home Screen</strong></li>
+      <li>Open <strong>Battle Boy</strong> from your home screen</li>
+    </ol>
+    <div class="ios-install-actions">
+      <button type="button" id="iosInstallShare">HOW TO ADD</button>
+      <button type="button" id="iosInstallGotIt">GOT IT</button>
+    </div>
+  </div>
   <div id="touchUI" class="touch-ui" aria-hidden="true">
     <div id="stickLeft" class="joystick-zone joystick-left">
       <div class="joystick-base"><div class="joystick-knob"></div></div>
@@ -201,8 +276,65 @@
     || 'ontouchstart' in window
     || navigator.maxTouchPoints > 0;
 
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches;
+  /** True when Safari still shows address bar + tabs (normal tab). */
+  const isIOSSafariBrowser = isIOS && !isStandalone;
+
   const fsBtn = document.getElementById('fsBtn');
+  const iosInstall = document.getElementById('iosInstall');
+  const IOS_INSTALL_KEY = 'battleBoy_iosInstallDismissed';
   const aspect = W / H;
+
+  if (isStandalone) document.body.classList.add('standalone-mode');
+
+  function viewportSize() {
+    const vv = window.visualViewport;
+    if (vv) return { w: vv.width, h: vv.height };
+    return { w: window.innerWidth, h: window.innerHeight };
+  }
+
+  function shouldShowIosInstall() {
+    return isIOSSafariBrowser && !localStorage.getItem(IOS_INSTALL_KEY);
+  }
+
+  function updateIosInstallBanner() {
+    if (!iosInstall) return;
+    const show = shouldShowIosInstall()
+      && (state === 'TITLE' || state === 'PLAYING' || state === 'PAUSED');
+    iosInstall.classList.toggle('visible', show);
+  }
+
+  function dismissIosInstall() {
+    localStorage.setItem(IOS_INSTALL_KEY, '1');
+    updateIosInstallBanner();
+  }
+
+  if (iosInstall) {
+    document.getElementById('iosInstallGotIt')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissIosInstall();
+    });
+    document.getElementById('iosInstallShare')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      alert(
+        'Add Battle Boy to your Home Screen:\n\n' +
+        '1. Tap Share (↑) at the bottom of Safari\n' +
+        '2. Scroll the menu and tap "Add to Home Screen"\n' +
+        '3. Tap Add — then launch Battle Boy from your home screen\n\n' +
+        'That version runs without Safari bars.'
+      );
+    });
+    iosInstall.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resize);
+    window.visualViewport.addEventListener('scroll', resize);
+  }
 
   function getFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -220,12 +352,22 @@
 
   function updateFsButton() {
     if (!fsBtn) return;
+    if (isIOSSafariBrowser) {
+      fsBtn.textContent = 'HIDE SAFARI';
+      fsBtn.setAttribute('aria-label', 'How to hide Safari interface');
+      return;
+    }
     const on = isGameFullscreen();
     fsBtn.textContent = on ? 'EXIT FULL' : 'FULLSCREEN';
     fsBtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
   }
+  updateFsButton();
 
   async function enterGameFullscreen() {
+    if (isIOSSafariBrowser) {
+      updateIosInstallBanner();
+      return;
+    }
     const el = document.documentElement;
     try {
       if (el.requestFullscreen) await el.requestFullscreen();
@@ -251,6 +393,11 @@
   }
 
   async function toggleFullscreen() {
+    if (isIOSSafariBrowser) {
+      updateIosInstallBanner();
+      if (iosInstall) iosInstall.scrollIntoView({ block: 'nearest' });
+      return;
+    }
     if (isGameFullscreen()) await exitGameFullscreen();
     else await enterGameFullscreen();
   }
@@ -274,8 +421,7 @@
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const sw = window.innerWidth;
-    const sh = window.innerHeight;
+    const { w: sw, h: sh } = viewportSize();
     let cw, ch;
     if (isGameFullscreen()) {
       // Cover the viewport — no letterboxing in fullscreen
@@ -997,7 +1143,8 @@
     document.body.classList.add('playing-ui');
     spawnWaveBatch();
     startMusic();
-    if (isTouchDevice) enterGameFullscreen();
+    updateIosInstallBanner();
+    if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
   }
 
   function endGame() {
@@ -1542,9 +1689,11 @@
 
     ctx.fillStyle = COLORS.dim;
     ctx.textAlign = 'center';
-    const hint = isTouchDevice
-      ? 'Sticks MOVE/FIRE · FULLSCREEN btn top-right'
-      : 'WASD+mouse · F or FULLSCREEN btn · P pause';
+    const hint = isIOSSafariBrowser
+      ? 'Sticks MOVE/FIRE · HIDE SAFARI = Add to Home Screen'
+      : isTouchDevice
+        ? 'Sticks MOVE/FIRE · FULLSCREEN top-right'
+        : 'WASD+mouse · F or FULLSCREEN btn · P pause';
     ctx.fillText(hint, W / 2, H - 14);
     ctx.restore();
   }
@@ -1581,9 +1730,15 @@
     ctx.font = '14px Courier New';
     ctx.fillStyle = COLORS.dim;
     ctx.fillText('Defend four Function Nodes · Twin-stick arena combat · TripTronic vectors', W / 2, H / 2 + 155);
-    if (isTouchDevice) {
+    if (isStandalone) {
+      ctx.fillStyle = COLORS.lime;
+      ctx.fillText('Home Screen mode — full display, no Safari bars', W / 2, H / 2 + 178);
+    } else if (isIOSSafariBrowser) {
+      ctx.fillStyle = COLORS.yellow;
+      ctx.fillText('iPhone: Share → Add to Home Screen to hide Safari UI', W / 2, H / 2 + 178);
+    } else if (isTouchDevice) {
       ctx.fillStyle = COLORS.cyan;
-      ctx.fillText('Mobile: twin sticks · auto fullscreen in-game · FULLSCREEN button', W / 2, H / 2 + 178);
+      ctx.fillText('Mobile: twin sticks · FULLSCREEN button', W / 2, H / 2 + 178);
     } else {
       ctx.fillStyle = COLORS.dim;
       ctx.fillText('Press F during play for fullscreen', W / 2, H / 2 + 178);
@@ -1706,6 +1861,7 @@
     }
 
     updateTouchUIVisibility();
+    updateIosInstallBanner();
     render();
     requestAnimationFrame(loop);
   }
@@ -1755,8 +1911,8 @@ HOW TO PLAY
 • Terminus Protocol triggers when 2+ nodes hit 0% integrity OR total node
   integrity ≤ 120. A powerful Terminus elite spawns—destroy it!
 • Collect power-ups: health (+), rapid fire (»), shield (◯), node repair (◇).
-• Pause with P. Fullscreen: F key or FULLSCREEN button (top-right); auto on
-  mobile when a run starts. Exit with button, F, or Escape.
+• Pause with P. Desktop fullscreen: F or FULLSCREEN button. iPhone Safari tab
+  cannot hide browser UI — Share → Add to Home Screen, then open from icon.
 • Press Enter/Space/click on title or game over screens.
 
 ================================================================================

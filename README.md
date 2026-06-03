@@ -13,14 +13,20 @@ Works on desktop and iPhone/iPad — no install, no local server. Tap to start; 
 1. Clone this repo, or open [`index.html`](index.html) directly.
 2. Click the canvas once to unlock audio, then press **Enter** or click **START**.
 
-### iPhone / iPad
+### iPhone / iPad — hide Safari bars (recommended)
 
-Open the **Play online** link above in Safari.
+**Safari cannot remove the address bar and tabs while you play inside a normal browser tab.** That is an Apple limitation, not the game. To play with **no Safari interface**:
 
-1. **Tap** the screen to start (unlocks audio).
-2. **Left stick** — move; **right stick** — aim and fire.
-3. The game **enters fullscreen automatically** when a run starts (or tap **FULLSCREEN** top-right).
-4. Optional: **Share → Add to Home Screen** for an app-like shortcut without Safari chrome.
+1. Open **https://visionarypov.github.io/BattleBoy/** in Safari.
+2. Tap **Share** (↑) at the bottom of Safari.
+3. Tap **Add to Home Screen** → **Add**.
+4. Launch **Battle Boy** from your home screen icon (standalone app mode).
+
+You get the full screen, twin sticks, and no URL bar or tab strip. The in-game **HIDE SAFARI** button walks through these steps if you open the link in Safari first.
+
+### iPhone / iPad — Safari tab only
+
+If you play inside Safari without adding to Home Screen, the browser chrome stays visible. Use the sticks as normal; tap **HIDE SAFARI** for install instructions.
 
 <details>
 <summary>Local Wi‑Fi server (optional dev fallback)</summary>
