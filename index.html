@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Battle Boy — Twin-Stick Arena Shooter</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -11,17 +13,101 @@
       overflow: hidden;
       background: #0a0a12;
       font-family: "Courier New", monospace;
+      touch-action: none;
+      overscroll-behavior: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     #gameCanvas {
       display: block;
       margin: 0 auto;
       cursor: crosshair;
+      touch-action: none;
     }
     body.title-cursor #gameCanvas { cursor: default; }
+    body.touch-mode #gameCanvas { cursor: default; }
+
+    /* Virtual twin-stick overlays (phone / tablet) */
+    .touch-ui {
+      display: none;
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+    }
+    .touch-ui.active { display: block; }
+    .joystick-zone {
+      position: absolute;
+      bottom: max(20px, env(safe-area-inset-bottom, 20px));
+      width: 132px;
+      height: 148px;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .joystick-left {
+      left: max(14px, env(safe-area-inset-left, 14px));
+    }
+    .joystick-right {
+      right: max(14px, env(safe-area-inset-right, 14px));
+    }
+    .joystick-label {
+      display: block;
+      margin-top: 6px;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: rgba(0, 240, 255, 0.65);
+      font-family: "Courier New", monospace;
+      pointer-events: none;
+    }
+    .joystick-right .joystick-label { color: rgba(255, 0, 170, 0.7); }
+    .joystick-base {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto;
+      border-radius: 50%;
+      border: 2px solid rgba(0, 240, 255, 0.5);
+      background: radial-gradient(circle at 50% 50%, rgba(0, 40, 60, 0.5), rgba(8, 8, 16, 0.65));
+      box-shadow: 0 0 18px rgba(0, 240, 255, 0.25), inset 0 0 24px rgba(0, 240, 255, 0.06);
+    }
+    .joystick-right .joystick-base {
+      border-color: rgba(255, 0, 170, 0.55);
+      box-shadow: 0 0 18px rgba(255, 0, 170, 0.25), inset 0 0 24px rgba(255, 0, 170, 0.06);
+    }
+    .joystick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 46px;
+      height: 46px;
+      margin: -23px 0 0 -23px;
+      border-radius: 50%;
+      border: 2px solid rgba(232, 244, 255, 0.85);
+      background: radial-gradient(circle at 35% 35%, rgba(0, 240, 255, 0.35), rgba(0, 20, 40, 0.9));
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.45);
+      will-change: transform;
+    }
+    .joystick-right .joystick-knob {
+      border-color: rgba(255, 200, 240, 0.9);
+      background: radial-gradient(circle at 35% 35%, rgba(255, 0, 170, 0.35), rgba(40, 0, 30, 0.9));
+      box-shadow: 0 0 12px rgba(255, 0, 170, 0.45);
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+  <div id="touchUI" class="touch-ui" aria-hidden="true">
+    <div id="stickLeft" class="joystick-zone joystick-left">
+      <div class="joystick-base"><div class="joystick-knob"></div></div>
+      <span class="joystick-label">MOVE</span>
+    </div>
+    <div id="stickRight" class="joystick-zone joystick-right">
+      <div class="joystick-base"><div class="joystick-knob"></div></div>
+      <span class="joystick-label">AIM / FIRE</span>
+    </div>
+  </div>
 
 <script>
 /* ============================================================================
@@ -72,6 +158,12 @@
   let mouseDown = false;
   let padAimX = 0, padAimY = 0, padMoveX = 0, padMoveY = 0;
   let padFire = false;
+  let touchMoveX = 0, touchMoveY = 0;
+  let touchAimX = 0, touchAimY = 0;
+
+  const isTouchDevice = window.matchMedia('(pointer: coarse)').matches
+    || 'ontouchstart' in window
+    || navigator.maxTouchPoints > 0;
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -109,6 +201,105 @@
   canvas.addEventListener('mouseup', () => { mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+  document.addEventListener('touchmove', e => {
+    if (document.getElementById('touchUI')?.classList.contains('active')) e.preventDefault();
+  }, { passive: false });
+
+  // ─── Virtual analog joysticks (mobile twin-stick) ─────────────────────────
+  const touchUI = document.getElementById('touchUI');
+  const TOUCH_AIM_DEAD = 0.15;
+  const TOUCH_FIRE_DEAD = 0.22;
+
+  function initVirtualJoystick(zoneEl, isAim) {
+    const base = zoneEl.querySelector('.joystick-base');
+    const knob = zoneEl.querySelector('.joystick-knob');
+    let active = false;
+    let captureId = null;
+    let radius = 46;
+
+    function syncRadius() {
+      radius = Math.max(36, base.offsetWidth * 0.38);
+    }
+    syncRadius();
+    window.addEventListener('resize', syncRadius);
+
+    function setOutput(nx, ny) {
+      if (isAim) { touchAimX = nx; touchAimY = ny; }
+      else { touchMoveX = nx; touchMoveY = ny; }
+    }
+
+    function resetKnob() {
+      knob.style.transform = 'translate(-50%, -50%)';
+      setOutput(0, 0);
+    }
+
+    function applyFromClient(cx, cy, clientX, clientY) {
+      let dx = clientX - cx;
+      let dy = clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist > radius) {
+        dx = (dx / dist) * radius;
+        dy = (dy / dist) * radius;
+      }
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      setOutput(dx / radius, dy / radius);
+    }
+
+    function center() {
+      const r = base.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    }
+
+    function onPointerDown(e) {
+      if (state !== 'PLAYING' && state !== 'PAUSED') return;
+      if (active) return;
+      active = true;
+      captureId = e.pointerId;
+      zoneEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      const { cx, cy } = center();
+      applyFromClient(cx, cy, e.clientX, e.clientY);
+    }
+
+    function onPointerMove(e) {
+      if (!active || e.pointerId !== captureId) return;
+      e.preventDefault();
+      const { cx, cy } = center();
+      applyFromClient(cx, cy, e.clientX, e.clientY);
+    }
+
+    function onPointerUp(e) {
+      if (!active || e.pointerId !== captureId) return;
+      active = false;
+      captureId = null;
+      try { zoneEl.releasePointerCapture(e.pointerId); } catch (_) {}
+      resetKnob();
+    }
+
+    zoneEl.addEventListener('pointerdown', onPointerDown);
+    zoneEl.addEventListener('pointermove', onPointerMove);
+    zoneEl.addEventListener('pointerup', onPointerUp);
+    zoneEl.addEventListener('pointercancel', onPointerUp);
+    resetKnob();
+  }
+
+  if (touchUI) {
+    initVirtualJoystick(document.getElementById('stickLeft'), false);
+    initVirtualJoystick(document.getElementById('stickRight'), true);
+  }
+
+  function updateTouchUIVisibility() {
+    if (!touchUI) return;
+    const show = isTouchDevice && (state === 'PLAYING' || state === 'PAUSED');
+    touchUI.classList.toggle('active', show);
+    touchUI.setAttribute('aria-hidden', show ? 'false' : 'true');
+    document.body.classList.toggle('touch-mode', show);
+    if (!show) {
+      touchMoveX = touchMoveY = 0;
+      touchAimX = touchAimY = 0;
+    }
+  }
+
   function pollGamepad() {
     const gp = navigator.getGamepads?.()[0];
     if (!gp) { padMoveX = padMoveY = padAimX = padAimY = 0; padFire = false; return; }
@@ -136,29 +327,40 @@
     if (keys['Numpad9']) { mx += 1; my -= 1; }
     if (keys['Numpad1']) { mx -= 1; my += 1; }
     if (keys['Numpad3']) { mx += 1; my += 1; }
-    mx += padMoveX;
-    my += padMoveY;
+    mx += padMoveX + touchMoveX;
+    my += padMoveY + touchMoveY;
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
     return { mx, my };
   }
 
   function getAimAngle(px, py) {
-    let ax = mouseX - px, ay = mouseY - py;
-    if (Math.hypot(padAimX, padAimY) > 0.3) {
-      ax = padAimX; ay = padAimY;
-    } else {
-      let fx = 0, fy = 0;
-      if (keys['KeyI'] || keys['Numpad8']) fy -= 1;
-      if (keys['KeyK'] || keys['Numpad2']) fy += 1;
-      if (keys['KeyJ'] || keys['Numpad4']) fx -= 1;
-      if (keys['KeyL'] || keys['Numpad6']) fx += 1;
-      if (Math.hypot(fx, fy) > 0) { ax = fx; ay = fy; }
+    const touchMag = Math.hypot(touchAimX, touchAimY);
+    if (touchMag > TOUCH_AIM_DEAD) {
+      return Math.atan2(touchAimY, touchAimX);
     }
-    return Math.atan2(ay, ax);
+    if (Math.hypot(padAimX, padAimY) > 0.3) {
+      return Math.atan2(padAimY, padAimX);
+    }
+    if (!isTouchDevice || document.body.classList.contains('title-cursor')) {
+      let ax = mouseX - px, ay = mouseY - py;
+      if (Math.hypot(ax, ay) > 8) return Math.atan2(ay, ax);
+    }
+    let fx = 0, fy = 0;
+    if (keys['KeyI'] || keys['Numpad8']) fy -= 1;
+    if (keys['KeyK'] || keys['Numpad2']) fy += 1;
+    if (keys['KeyJ'] || keys['Numpad4']) fx -= 1;
+    if (keys['KeyL'] || keys['Numpad6']) fx += 1;
+    if (Math.hypot(fx, fy) > 0) return Math.atan2(fy, fx);
+    return player.angle;
   }
 
   function wantsFire() {
+    const touchMag = Math.hypot(touchAimX, touchAimY);
+    if (touchMag > TOUCH_FIRE_DEAD) return true;
+    if (document.body.classList.contains('touch-mode')) {
+      return padFire || keys['Space'] || keys['Numpad0'];
+    }
     return mouseDown || padFire || keys['Space'] || keys['Numpad0'];
   }
 
@@ -1212,7 +1414,10 @@
 
     ctx.fillStyle = COLORS.dim;
     ctx.textAlign = 'center';
-    ctx.fillText('WASD move · MOUSE aim · HOLD LMB fire · IJKL/numpad aim fallback · P pause', W / 2, H - 14);
+    const hint = isTouchDevice
+      ? 'Left stick MOVE · Right stick AIM+FIRE · Desktop: WASD + mouse'
+      : 'WASD move · MOUSE aim · HOLD LMB fire · IJKL/numpad aim fallback · P pause';
+    ctx.fillText(hint, W / 2, H - 14);
     ctx.restore();
   }
 
@@ -1239,12 +1444,19 @@
     ctx.textAlign = 'center';
     const pulse = Math.sin(gameTime * 3) * 0.3 + 0.7;
     ctx.globalAlpha = pulse;
-    ctx.fillText('PRESS ENTER / SPACE / CLICK TO START', W / 2, H / 2 + 120);
+    const startMsg = isTouchDevice
+      ? 'TAP ANYWHERE TO START'
+      : 'PRESS ENTER / SPACE / CLICK TO START';
+    ctx.fillText(startMsg, W / 2, H / 2 + 120);
     ctx.globalAlpha = 1;
 
     ctx.font = '14px Courier New';
     ctx.fillStyle = COLORS.dim;
     ctx.fillText('Defend four Function Nodes · Twin-stick arena combat · TripTronic vectors', W / 2, H / 2 + 155);
+    if (isTouchDevice) {
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fillText('Mobile: left stick MOVE · right stick AIM + FIRE', W / 2, H / 2 + 178);
+    }
 
     // High scores
     const hs = loadHighScores();
@@ -1358,6 +1570,7 @@
       update(dt);
     }
 
+    updateTouchUIVisibility();
     render();
     requestAnimationFrame(loop);
   }
@@ -1372,6 +1585,17 @@
     }
   });
 
+  canvas.addEventListener('touchend', (e) => {
+    if (e.target !== canvas) return;
+    resumeAudio();
+    if (state === 'TITLE') startGame();
+    if (state === 'GAMEOVER') {
+      state = 'TITLE';
+      stopMusicLoops();
+      resetGame();
+    }
+  }, { passive: true });
+
   requestAnimationFrame(loop);
 })();
 </script>
@@ -1385,6 +1609,8 @@ HOW TO PLAY
 • Move with WASD or Arrow keys. Aim with the mouse; hold Left Mouse Button to
   fire. Keyboard aim fallback: IJKL or numpad (including diagonals 7/9/1/3).
   Gamepad: left stick move, right stick aim, RT/RB/A to fire.
+• Mobile (iPhone/iPad): left virtual analog stick = move; right stick = aim
+  direction and auto-fire while pushed past the dead zone.
 • Enemies: Grunts chase you; Hackers corrupt nodes; Shooters (wave 4+) fire at
   you; Swarmers (wave 6+) rush in packs. Kill enemies for score and combos.
 • Terminus Protocol triggers when 2+ nodes hit 0% integrity OR total node
@@ -1402,12 +1628,11 @@ ASSUMPTIONS
   policy. Music layers schedule procedurally and rebuild as intensity rises.
 • Arena is circular; player and enemies clamp inside the ring.
 • Nodes slowly regenerate when few enemies remain (light passive recovery).
-• No mobile touch controls in v1—mouse/keyboard/gamepad only.
+• Virtual twin-stick overlays appear on touch/coarse-pointer devices during play.
 
 ================================================================================
 V2 IMPROVEMENTS
 ================================================================================
-• Touch twin-stick virtual controls for mobile
 • Boss variety per 5 waves, multiplayer co-op
 • Screen shake options, colorblind palettes, reduced motion mode
 • Separate music stems with Web Audio scheduled buffers (cleaner loops)
