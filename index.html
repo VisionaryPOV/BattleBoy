@@ -435,6 +435,7 @@
   if (pauseBtn) {
     pauseBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      resumeAudio();
       if (state === 'PLAYING' || state === 'PAUSED') togglePause();
     });
     pauseBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -528,7 +529,7 @@
       const topPad = 6;
       const bottomPad = 148;
       const usableH = Math.max(200, sh - topPad - bottomPad);
-      ch = usableH * 0.9;
+      ch = usableH * 0.8;
       cw = ch * aspect;
       clearCanvasPosition();
       canvas.style.position = 'fixed';
@@ -798,10 +799,14 @@
   let musicStarted = false;
   let musicIntensity = 0;
   let musicNodes = [];
+  let musicLoopGen = 0;
+  let audioUnlockPromise = null;
 
   function initAudio() {
     if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    audioCtx = new Ctx();
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 0.35;
     masterGain.connect(audioCtx.destination);
@@ -813,13 +818,31 @@
     sfxGain.connect(masterGain);
   }
 
-  function resumeAudio() {
+  async function resumeAudio() {
     initAudio();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (!audioCtx) return false;
+    if (audioCtx.state === 'running') return true;
+    if (!audioUnlockPromise) {
+      audioUnlockPromise = audioCtx.resume()
+        .then(() => true)
+        .catch(() => false)
+        .finally(() => { audioUnlockPromise = null; });
+    }
+    return audioUnlockPromise;
   }
 
-  function playSfx(type) {
-    if (!audioCtx) return;
+  function bindAudioUnlock() {
+    const unlock = () => { resumeAudio(); };
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('touchend', unlock, { passive: true });
+    document.addEventListener('click', unlock);
+    document.addEventListener('keydown', unlock);
+  }
+  bindAudioUnlock();
+
+  async function playSfx(type) {
+    await resumeAudio();
+    if (!audioCtx || audioCtx.state !== 'running') return;
     const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
@@ -885,9 +908,12 @@
     }
   }
 
-  function startMusic() {
-    if (!audioCtx || musicStarted) return;
+  async function startMusic() {
+    await resumeAudio();
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    stopMusicLoops();
     musicStarted = true;
+    const loopGen = ++musicLoopGen;
     const bpm = 128;
     const beat = 60 / bpm;
 
@@ -915,7 +941,7 @@
     function scheduleHat(start) {
       const len = 64;
       for (let i = 0; i < len; i++) {
-        if (musicIntensity < 0.2 && i % 2) continue;
+        if (musicIntensity < 0.12 && i % 2) continue;
         const when = start + i * (beat / 2);
         const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.02, audioCtx.sampleRate);
         const d = buf.getChannelData(0);
@@ -941,7 +967,7 @@
       let t = start;
       for (let cycle = 0; cycle < 4; cycle++) {
         for (const freq of notes) {
-          if (musicIntensity < 0.35) { t += beat; continue; }
+          if (musicIntensity < 0.18) { t += beat; continue; }
           const osc = audioCtx.createOscillator();
           const g = audioCtx.createGain();
           osc.type = 'sawtooth';
@@ -967,7 +993,7 @@
       const scale = [220, 261.63, 329.63, 392, 440, 523.25];
       let t = start;
       for (let i = 0; i < 32; i++) {
-        if (musicIntensity < 0.55) { t += beat / 2; continue; }
+        if (musicIntensity < 0.4) { t += beat / 2; continue; }
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         osc.type = 'square';
@@ -984,8 +1010,9 @@
     }
 
     function loop() {
-      if (!audioCtx || state === 'TITLE') {
-        setTimeout(loop, 500);
+      if (!audioCtx || loopGen !== musicLoopGen) return;
+      if (state !== 'PLAYING') {
+        musicNodes.push(setTimeout(loop, 400));
         return;
       }
       const now = audioCtx.currentTime + 0.1;
@@ -994,13 +1021,14 @@
       end = scheduleHat(end);
       end = scheduleBass(end);
       end = scheduleArp(end);
-      const delay = Math.max(0, (end - audioCtx.currentTime - 2) * 1000);
-      musicNodes.push(setTimeout(loop, delay || 8000));
+      const delay = Math.max(400, (end - audioCtx.currentTime - 2) * 1000);
+      musicNodes.push(setTimeout(loop, delay));
     }
     loop();
   }
 
   function stopMusicLoops() {
+    musicLoopGen++;
     musicNodes.forEach(id => clearTimeout(id));
     musicNodes = [];
     musicStarted = false;
@@ -1254,8 +1282,8 @@
     powerupPool.active.slice().forEach(p => powerupPool.release(p));
   }
 
-  function startGame() {
-    resumeAudio();
+  async function startGame() {
+    await resumeAudio();
     resetGame();
     state = 'PLAYING';
     document.body.classList.remove('title-cursor');
@@ -1989,20 +2017,12 @@
     requestAnimationFrame(loop);
   }
 
-  canvas.addEventListener('click', () => {
-    resumeAudio();
-    if (state === 'TITLE') startGame();
-    if (state === 'GAMEOVER') {
-      state = 'TITLE';
-      document.body.classList.remove('playing-ui');
-      exitGameFullscreen();
-      stopMusicLoops();
-      resetGame();
-    }
-  });
+  let suppressCanvasClick = false;
 
   canvas.addEventListener('touchend', (e) => {
     if (e.target !== canvas) return;
+    suppressCanvasClick = true;
+    setTimeout(() => { suppressCanvasClick = false; }, 400);
     resumeAudio();
     if (state === 'TITLE') startGame();
     if (state === 'GAMEOVER') {
@@ -2013,6 +2033,19 @@
       resetGame();
     }
   }, { passive: true });
+
+  canvas.addEventListener('click', () => {
+    if (suppressCanvasClick) return;
+    resumeAudio();
+    if (state === 'TITLE') startGame();
+    if (state === 'GAMEOVER') {
+      state = 'TITLE';
+      document.body.classList.remove('playing-ui');
+      exitGameFullscreen();
+      stopMusicLoops();
+      resetGame();
+    }
+  });
 
   requestAnimationFrame(loop);
 })();
