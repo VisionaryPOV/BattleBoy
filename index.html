@@ -491,6 +491,7 @@
   </style>
 </head>
 <body>
+  <div id="bootError" style="display:none;position:fixed;left:12px;right:12px;top:12px;z-index:200;padding:12px;border:2px solid #ff2244;border-radius:8px;background:rgba(20,0,8,0.95);color:#ff8888;font:12px 'Courier New',monospace;"></div>
   <canvas id="gameCanvas"></canvas>
   <div id="screenTap" role="button" tabindex="0" aria-label="Tap to continue"></div>
   <div id="gameUI">
@@ -615,6 +616,23 @@
 
   if (isStandalone) document.body.classList.add('standalone-mode');
 
+  // Must exist before resize() — updatePlayLayoutClasses reads state on first layout
+  let state = 'TITLE';
+
+  function showBootError(msg) {
+    const el = document.getElementById('bootError');
+    if (el) {
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+  }
+  window.addEventListener('error', (e) => {
+    showBootError('Battle Boy failed to start: ' + (e.message || 'unknown error'));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    showBootError('Battle Boy failed: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+  });
+
   function viewportSize() {
     const vv = window.visualViewport;
     if (vv) return { w: vv.width, h: vv.height };
@@ -698,8 +716,10 @@
     else if (state === 'PAUSED') state = 'PLAYING';
     updatePauseButton();
     updatePlayLayoutClasses();
-    MusicDirector.applyDuck();
-    MusicDirector.sync();
+    if (typeof MusicDirector !== 'undefined') {
+      MusicDirector.applyDuck();
+      MusicDirector.sync();
+    }
   }
 
   function updatePauseButton() {
@@ -1530,7 +1550,6 @@
   }
 
   // ─── Game state ────────────────────────────────────────────────────────────
-  let state = 'TITLE';
   let wave = 1;
   let score = 0;
   let combo = 0;
@@ -1606,7 +1625,8 @@
       rank.textContent = (i + 1) + '.';
       const pts = document.createElement('span');
       pts.textContent = e.score + '  W' + (e.wave || '?') + '  ' + e.date;
-      li.append(rank, pts);
+      li.appendChild(rank);
+      li.appendChild(pts);
       leaderboardList.appendChild(li);
     });
   }
