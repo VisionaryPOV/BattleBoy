@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Battle Boy — Viewport QA</title>
+  <style>
+    body { font: 13px/1.5 "Courier New", monospace; background: #0a0a12; color: #aaf8ff; margin: 12px; }
+    h1 { color: #00f0ff; font-size: 16px; }
+    pre { background: #121820; padding: 12px; border: 1px solid #334455; overflow: auto; }
+    a { color: #ffe600; }
+    button { margin: 6px 6px 6px 0; padding: 8px 12px; border: 1px solid #00f0ff; background: #081018; color: #00f0ff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Battle Boy — viewport smoke</h1>
+  <p>Open <a href="../index.html">index.html</a> in another tab, or embed below. Use DevTools device toolbar to simulate iPhone / iPad portrait and landscape.</p>
+  <p>
+    <button type="button" id="iphoneP">iPhone portrait</button>
+    <button type="button" id="iphoneL">iPhone landscape</button>
+    <button type="button" id="ipadP">iPad portrait</button>
+    <button type="button" id="ipadL">iPad landscape</button>
+  </p>
+  <pre id="log">Resize the window or pick a preset…</pre>
+  <iframe id="frame" src="../index.html" style="width:100%;height:70vh;border:2px solid #334455;margin-top:12px;"></iframe>
+  <script>
+    const presets = {
+      iphoneP: [390, 844],
+      iphoneL: [844, 390],
+      ipadP: [820, 1180],
+      ipadL: [1180, 820]
+    };
+    const log = document.getElementById('log');
+    const frame = document.getElementById('frame');
+
+    function report() {
+      const lines = [
+        'host: ' + innerWidth + ' x ' + innerHeight,
+        'iframe: ' + (frame.offsetWidth | 0) + ' x ' + (frame.offsetHeight | 0),
+        'time: ' + new Date().toISOString()
+      ];
+      try {
+        const doc = frame.contentDocument;
+        const body = doc?.body;
+        if (body) {
+          lines.push('classes: ' + [...body.classList].join(' ') || '(none)');
+          const canvas = doc.getElementById('gameCanvas');
+          if (canvas) {
+            const r = canvas.getBoundingClientRect();
+            lines.push('canvas CSS: ' + (r.width | 0) + ' x ' + (r.height | 0));
+          }
+          const pause = doc.getElementById('pauseBtn');
+          if (pause) {
+            const pr = pause.getBoundingClientRect();
+            lines.push('pause: left=' + (pr.left | 0) + ' bottom~' + (innerHeight - pr.bottom | 0));
+          }
+        }
+      } catch (e) {
+        lines.push('iframe read: ' + e.message);
+      }
+      log.textContent = lines.join('\n');
+    }
+
+    Object.keys(presets).forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        const [w, h] = presets[id];
+        frame.style.width = w + 'px';
+        frame.style.height = h + 'px';
+        frame.style.maxWidth = '100%';
+        setTimeout(report, 400);
+      });
+    });
+    window.addEventListener('resize', report);
+    frame.addEventListener('load', () => setTimeout(report, 800));
+    report();
+  </script>
+</body>
+</html>

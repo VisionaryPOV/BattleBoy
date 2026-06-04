@@ -120,6 +120,147 @@
       font-size: 10px;
       letter-spacing: 0.06em;
     }
+    body.touch-play-layout #pauseBtn {
+      left: 50%;
+      top: auto;
+      bottom: max(78px, calc(env(safe-area-inset-bottom, 10px) + 62px));
+      transform: translateX(-50%);
+      min-width: 64px;
+      z-index: 102;
+    }
+    body.tablet-layout .joystick-zone {
+      width: 156px;
+      height: 172px;
+    }
+    body.tablet-layout .joystick-base {
+      width: 140px;
+      height: 140px;
+    }
+    body.tablet-layout.portrait-layout .joystick-zone {
+      width: 120px;
+      height: 132px;
+    }
+
+    #leaderboardBtn {
+      display: none;
+      position: fixed;
+      left: 50%;
+      bottom: max(18%, 140px);
+      transform: translateX(-50%) translateX(130px);
+      z-index: 101;
+      pointer-events: auto;
+      touch-action: manipulation;
+      padding: 14px 22px;
+      min-width: 0;
+      border: 2px solid rgba(255, 238, 0, 0.65);
+      border-radius: 8px;
+      background: rgba(12, 10, 28, 0.92);
+      color: #ffe600;
+      font: bold 13px "Courier New", monospace;
+      letter-spacing: 0.1em;
+      box-shadow: 0 0 18px rgba(255, 238, 0, 0.25);
+      -webkit-tap-highlight-color: transparent;
+    }
+    #leaderboardBtn:active {
+      background: rgba(255, 238, 0, 0.15);
+    }
+    body.title-cursor #leaderboardBtn,
+    body.gameover-tap #leaderboardBtn {
+      display: block;
+    }
+    body.title-cursor #leaderboardBtn {
+      transform: translateX(-50%);
+      bottom: max(14%, 108px);
+    }
+    body.gameover-tap #retryBtn {
+      transform: translateX(-50%) translateX(-130px);
+    }
+    body.gameover-tap #leaderboardBtn {
+      transform: translateX(-50%) translateX(130px);
+    }
+    body.portrait-layout #leaderboardBtn {
+      transform: translateX(-50%);
+      bottom: max(12%, 100px);
+      left: 50%;
+      margin-left: 0;
+    }
+    body.portrait-layout #retryBtn {
+      bottom: max(20%, 168px);
+      transform: translateX(-50%);
+    }
+    body.portrait-layout.gameover-tap #leaderboardBtn {
+      bottom: max(14%, 118px);
+    }
+    body.portrait-layout.title-cursor #leaderboardBtn {
+      bottom: max(14%, 118px);
+    }
+
+    #leaderboardModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      align-items: center;
+      justify-content: center;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      background: rgba(4, 6, 14, 0.82);
+      pointer-events: none;
+    }
+    #leaderboardModal.open {
+      display: flex;
+      pointer-events: auto;
+    }
+    #leaderboardPanel {
+      width: min(360px, 92vw);
+      max-height: 70vh;
+      overflow: auto;
+      padding: 18px 20px 16px;
+      border: 2px solid rgba(0, 240, 255, 0.55);
+      border-radius: 10px;
+      background: rgba(8, 12, 24, 0.96);
+      box-shadow: 0 0 28px rgba(0, 240, 255, 0.2);
+      color: #e8f4ff;
+      font: 13px/1.5 "Courier New", monospace;
+    }
+    #leaderboardPanel h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      color: #00f0ff;
+      text-align: center;
+    }
+    #leaderboardList {
+      margin: 0 0 14px;
+      padding: 0;
+      list-style: none;
+    }
+    #leaderboardList li {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(51, 68, 85, 0.5);
+      color: #aaf8ff;
+    }
+    #leaderboardList li:first-child { color: #ffe600; font-weight: bold; }
+    #leaderboardList .lb-empty {
+      text-align: center;
+      color: #556677;
+      border: none;
+    }
+    #leaderboardClose {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border: 2px solid rgba(255, 238, 0, 0.55);
+      border-radius: 6px;
+      background: rgba(255, 238, 0, 0.1);
+      color: #ffe600;
+      font: bold 12px "Courier New", monospace;
+      letter-spacing: 0.1em;
+      touch-action: manipulation;
+    }
 
     /* iOS Safari: cannot hide browser chrome in-tab — guide Add to Home Screen */
     #iosInstall {
@@ -357,6 +498,7 @@
       onclick="event.stopPropagation();window.__bbStart&&window.__bbStart();return false;">START</button>
     <button type="button" id="retryBtn" class="ui-hit"
       onclick="event.stopPropagation();window.__bbStart&&window.__bbStart();return false;">PLAY AGAIN</button>
+    <button type="button" id="leaderboardBtn" class="ui-hit">LEADERBOARD</button>
     <button type="button" id="pauseBtn" class="ui-hit" aria-label="Pause game" title="Pause (P)">PAUSE</button>
     <button type="button" id="fsBtn" class="ui-hit" aria-label="Toggle fullscreen" title="Fullscreen (F)">FULLSCREEN</button>
   </div>
@@ -371,6 +513,13 @@
     <div class="ios-install-actions">
       <button type="button" id="iosInstallShare">HOW TO ADD</button>
       <button type="button" id="iosInstallGotIt">GOT IT</button>
+    </div>
+  </div>
+  <div id="leaderboardModal" role="dialog" aria-labelledby="leaderboardTitle" aria-modal="true">
+    <div id="leaderboardPanel">
+      <h2 id="leaderboardTitle">— HIGH SCORES —</h2>
+      <ol id="leaderboardList"></ol>
+      <button type="button" id="leaderboardClose" class="ui-hit">CLOSE</button>
     </div>
   </div>
   <div id="touchUI" class="touch-ui" aria-hidden="true">
@@ -478,6 +627,19 @@
     return isTouchDevice && h > w * 1.02;
   }
 
+  function isTabletPlay() {
+    const { w, h } = viewportSize();
+    return isTouchDevice && Math.min(w, h) >= 600;
+  }
+
+  function updatePlayLayoutClasses() {
+    const touchPlay = isTouchDevice && (state === 'PLAYING' || state === 'PAUSED');
+    document.body.classList.toggle('touch-play-layout', touchPlay);
+    const tablet = isTabletPlay();
+    document.body.classList.toggle('tablet-layout', tablet);
+    document.body.classList.toggle('tablet-landscape', tablet && !isPortraitPlay());
+  }
+
   function shouldShowIosInstall() {
     return isIOSSafariBrowser && !localStorage.getItem(IOS_INSTALL_KEY);
   }
@@ -535,6 +697,9 @@
     if (state === 'PLAYING') state = 'PAUSED';
     else if (state === 'PAUSED') state = 'PLAYING';
     updatePauseButton();
+    updatePlayLayoutClasses();
+    MusicDirector.applyDuck();
+    MusicDirector.sync();
   }
 
   function updatePauseButton() {
@@ -545,6 +710,11 @@
 
   function positionPauseButton() {
     if (!pauseBtn) return;
+    if (document.body.classList.contains('touch-play-layout')) {
+      pauseBtn.style.left = '';
+      pauseBtn.style.top = '';
+      return;
+    }
     const r = canvas.getBoundingClientRect();
     const sx = r.width / W;
     const sy = r.height / H;
@@ -641,16 +811,30 @@
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     const { w: sw, h: sh } = viewportSize();
     const portrait = isPortraitPlay();
+    const tablet = isTabletPlay();
     document.body.classList.toggle('portrait-layout', portrait);
+    document.body.classList.toggle('tablet-layout', tablet);
+    document.body.classList.toggle('tablet-landscape', tablet && !portrait);
 
     let cw, ch;
     if (portrait) {
-      // Slightly inset: room for sticks + status bar; ~90% of usable height
       const topPad = 6;
-      const bottomPad = 148;
+      const bottomPad = tablet ? 168 : 148;
       const usableH = Math.max(200, sh - topPad - bottomPad);
-      ch = usableH * 0.8;
+      ch = usableH * (tablet ? 0.84 : 0.8);
       cw = ch * aspect;
+      clearCanvasPosition();
+      canvas.style.position = 'fixed';
+      canvas.style.top = (topPad + (usableH - ch) * 0.5) + 'px';
+      canvas.style.left = ((sw - cw) * 0.5) + 'px';
+      canvas.style.margin = '0';
+    } else if (isTouchDevice && tablet) {
+      const topPad = 8;
+      const bottomPad = 156;
+      const usableH = Math.max(200, sh - topPad - bottomPad);
+      ch = usableH * 0.9;
+      cw = Math.min(ch * aspect, sw * 0.94);
+      if (cw > ch * aspect) ch = cw / aspect;
       clearCanvasPosition();
       canvas.style.position = 'fixed';
       canvas.style.top = (topPad + (usableH - ch) * 0.5) + 'px';
@@ -683,6 +867,7 @@
     scaleY = canvas.height / H;
     ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
     positionPauseButton();
+    updatePlayLayoutClasses();
   }
   resize();
 
@@ -716,7 +901,9 @@
   }, { passive: false });
 
   function isUiControlTarget(el) {
-    return el && el.closest('#startBtn, #retryBtn, #pauseBtn, #fsBtn, #iosInstall button, .joystick-zone');
+    return el && el.closest(
+      '#startBtn, #retryBtn, #leaderboardBtn, #leaderboardClose, #leaderboardModal, #pauseBtn, #fsBtn, #iosInstall button, .joystick-zone'
+    );
   }
 
   let lastScreenTapMs = 0;
@@ -834,6 +1021,7 @@
     touchUI.classList.toggle('active', show);
     touchUI.setAttribute('aria-hidden', show ? 'false' : 'true');
     document.body.classList.toggle('touch-mode', show);
+    updatePlayLayoutClasses();
     if (!show) {
       touchMoveX = touchMoveY = 0;
       touchAimX = touchAimY = 0;
@@ -946,10 +1134,10 @@
   // ─── Audio (Web Audio API) ─────────────────────────────────────────────────
   let audioCtx = null;
   let masterGain, musicGain, sfxGain;
-  let musicStarted = false;
   let musicIntensity = 0;
   let musicNodes = [];
   let musicLoopGen = 0;
+  let musicTargetGain = 0.22;
   let audioUnlockPromise = null;
 
   function initAudio() {
@@ -982,7 +1170,11 @@
   }
 
   function bindAudioUnlock() {
-    const unlock = () => { resumeAudio(); };
+    const unlock = () => {
+      resumeAudio().then(() => {
+        if (state === 'TITLE' || state === 'GAMEOVER') MusicDirector.start();
+      });
+    };
     document.addEventListener('touchstart', unlock, { passive: true });
     document.addEventListener('touchend', unlock, { passive: true });
     document.addEventListener('click', unlock);
@@ -1106,130 +1298,235 @@
     }
   }
 
-  async function startMusic() {
-    await resumeAudio();
-    if (!audioCtx || audioCtx.state !== 'running') return;
-    stopMusicLoops();
-    musicStarted = true;
-    const loopGen = ++musicLoopGen;
-    const bpm = 128;
-    const beat = 60 / bpm;
-
-    // Kick layer
-    function scheduleKick(start) {
-      const len = 32;
-      for (let i = 0; i < len; i++) {
-        const when = start + i * beat;
-        const osc = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(150, when);
-        osc.frequency.exponentialRampToValueAtTime(40, when + 0.08);
-        g.gain.setValueAtTime(0.5 + musicIntensity * 0.2, when);
-        g.gain.exponentialRampToValueAtTime(0.001, when + 0.12);
-        osc.connect(g);
-        g.connect(musicGain);
-        osc.start(when);
-        osc.stop(when + 0.15);
-      }
-      return start + len * beat;
+  const TRACKS = {
+    menu: {
+      bpm: 118, kickGain: 0.32, hatDensity: 0.25, bassGate: 0.35, arpGate: 1,
+      bassNotes: [55, 55, 65.41, 55], arpScale: [196, 220, 261.63], volume: 0.14
+    },
+    patrol: {
+      bpm: 128, kickGain: 0.48, hatDensity: 0.5, bassGate: 0.2, arpGate: 0.42,
+      bassNotes: [55, 55, 73.42, 55, 65.41, 55, 82.41, 55],
+      arpScale: [220, 261.63, 329.63, 392, 440, 523.25], volume: 0.22
+    },
+    assault: {
+      bpm: 142, kickGain: 0.55, hatDensity: 0.85, bassGate: 0.12, arpGate: 0.28,
+      bassNotes: [55, 58.27, 73.42, 55, 69.3, 82.41, 55, 92.5],
+      arpScale: [277.18, 329.63, 392, 440, 523.25, 659.25], volume: 0.26
+    },
+    terminus: {
+      bpm: 136, kickGain: 0.62, hatDensity: 0.9, bassGate: 0.08, arpGate: 0.2,
+      bassNotes: [46.25, 55, 49, 58.27, 51.91, 61.74, 55, 65.41],
+      arpScale: [207.65, 233.08, 277.18, 311.13, 349.23], volume: 0.3
     }
+  };
 
-    // Hi-hat layer (intensity gated)
-    function scheduleHat(start) {
-      const len = 64;
-      for (let i = 0; i < len; i++) {
-        if (musicIntensity < 0.12 && i % 2) continue;
-        const when = start + i * (beat / 2);
-        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.02, audioCtx.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.exp(-j / 80);
-        const src = audioCtx.createBufferSource();
-        src.buffer = buf;
-        const g = audioCtx.createGain();
-        g.gain.value = 0.08 + musicIntensity * 0.12;
-        const filt = audioCtx.createBiquadFilter();
-        filt.type = 'highpass';
-        filt.frequency.value = 6000;
-        src.connect(filt);
-        filt.connect(g);
-        g.connect(musicGain);
-        src.start(when);
-      }
-      return start + len * (beat / 2);
-    }
+  const MusicDirector = {
+    currentTrack: null,
+    duckState: null,
 
-    // Bass synth layer
-    function scheduleBass(start) {
-      const notes = [55, 55, 73.42, 55, 65.41, 55, 82.41, 55];
-      let t = start;
-      for (let cycle = 0; cycle < 4; cycle++) {
-        for (const freq of notes) {
-          if (musicIntensity < 0.18) { t += beat; continue; }
+    pickTrack() {
+      if (state === 'TITLE' || state === 'GAMEOVER') return 'menu';
+      if (state === 'PAUSED') return this.currentTrack || 'patrol';
+      if (terminusActive) return 'terminus';
+      if (wave >= 4 || musicIntensity > 0.45) return 'assault';
+      return 'patrol';
+    },
+
+    crossfadeTo(vol) {
+      if (!audioCtx || !musicGain) return;
+      musicTargetGain = vol;
+      const t = audioCtx.currentTime;
+      musicGain.gain.cancelScheduledValues(t);
+      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+      musicGain.gain.linearRampToValueAtTime(vol, t + 0.4);
+    },
+
+    applyDuck() {
+      const tr = TRACKS[this.currentTrack] || TRACKS.patrol;
+      const base = tr.volume;
+      const duck = state === 'PAUSED' ? 'paused' : 'play';
+      const vol = duck === 'paused' ? base * 0.35 : base;
+      if (this.duckState === duck && Math.abs(musicTargetGain - vol) < 0.01) return;
+      this.duckState = duck;
+      this.crossfadeTo(vol);
+    },
+
+    sync() {
+      const next = this.pickTrack();
+      if (next !== this.currentTrack) this.setTrack(next);
+      else this.applyDuck();
+    },
+
+    setTrack(id) {
+      this.currentTrack = id;
+      this.duckState = null;
+      const tr = TRACKS[id] || TRACKS.patrol;
+      this.crossfadeTo(state === 'PAUSED' ? tr.volume * 0.35 : tr.volume);
+      this.restartLoops();
+    },
+
+    stopLoops() {
+      musicLoopGen++;
+      musicNodes.forEach(id => clearTimeout(id));
+      musicNodes = [];
+    },
+
+    restartLoops() {
+      this.stopLoops();
+      if (!audioCtx || audioCtx.state !== 'running') return;
+      const loopGen = musicLoopGen;
+      const trackId = this.currentTrack || 'menu';
+      const tr = TRACKS[trackId];
+      const beat = 60 / tr.bpm;
+
+      const scheduleKick = (start) => {
+        const len = 32;
+        for (let i = 0; i < len; i++) {
+          const when = start + i * beat;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(trackId === 'terminus' ? 130 : 150, when);
+          osc.frequency.exponentialRampToValueAtTime(40, when + 0.08);
+          g.gain.setValueAtTime(tr.kickGain + musicIntensity * 0.18, when);
+          g.gain.exponentialRampToValueAtTime(0.001, when + 0.12);
+          osc.connect(g);
+          g.connect(musicGain);
+          osc.start(when);
+          osc.stop(when + 0.15);
+        }
+        return start + len * beat;
+      };
+
+      const scheduleHat = (start) => {
+        const len = 64;
+        for (let i = 0; i < len; i++) {
+          if (musicIntensity < tr.hatDensity * 0.15 && i % 2) continue;
+          const when = start + i * (beat / 2);
+          const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.02, audioCtx.sampleRate);
+          const d = buf.getChannelData(0);
+          for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.exp(-j / 80);
+          const src = audioCtx.createBufferSource();
+          src.buffer = buf;
+          const g = audioCtx.createGain();
+          g.gain.value = 0.06 + musicIntensity * tr.hatDensity * 0.14;
+          const filt = audioCtx.createBiquadFilter();
+          filt.type = 'highpass';
+          filt.frequency.value = trackId === 'assault' ? 7500 : 6000;
+          src.connect(filt);
+          filt.connect(g);
+          g.connect(musicGain);
+          src.start(when);
+        }
+        return start + len * (beat / 2);
+      };
+
+      const scheduleBass = (start) => {
+        let t = start;
+        for (let cycle = 0; cycle < 4; cycle++) {
+          for (const freq of tr.bassNotes) {
+            if (musicIntensity < tr.bassGate) { t += beat; continue; }
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = trackId === 'terminus' ? 'square' : 'sawtooth';
+            const filt = audioCtx.createBiquadFilter();
+            filt.type = 'lowpass';
+            filt.frequency.value = 350 + musicIntensity * 900;
+            osc.frequency.value = freq;
+            g.gain.setValueAtTime(0.1 + musicIntensity * 0.12, t);
+            g.gain.setValueAtTime(0.001, t + beat * 0.88);
+            osc.connect(filt);
+            filt.connect(g);
+            g.connect(musicGain);
+            osc.start(t);
+            osc.stop(t + beat);
+            t += beat;
+          }
+        }
+        return t;
+      };
+
+      const scheduleArp = (start) => {
+        let t = start;
+        for (let i = 0; i < 32; i++) {
+          if (musicIntensity < tr.arpGate) { t += beat / 2; continue; }
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = trackId === 'menu' ? 'triangle' : 'square';
+          osc.frequency.value = tr.arpScale[i % tr.arpScale.length]
+            * (1 + Math.floor(i / 8) * (trackId === 'assault' ? 0.5 : 0.25));
+          g.gain.setValueAtTime(trackId === 'terminus' ? 0.08 : 0.06, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+          osc.connect(g);
+          g.connect(musicGain);
+          osc.start(t);
+          osc.stop(t + 0.1);
+          t += beat / 2;
+        }
+        return t;
+      };
+
+      const scheduleAlarm = (start) => {
+        if (trackId !== 'terminus') return start;
+        let t = start;
+        for (let i = 0; i < 8; i++) {
           const osc = audioCtx.createOscillator();
           const g = audioCtx.createGain();
           osc.type = 'sawtooth';
-          const filt = audioCtx.createBiquadFilter();
-          filt.type = 'lowpass';
-          filt.frequency.value = 400 + musicIntensity * 800;
-          osc.frequency.value = freq;
-          g.gain.setValueAtTime(0.12 + musicIntensity * 0.1, t);
-          g.gain.setValueAtTime(0.001, t + beat * 0.9);
-          osc.connect(filt);
-          filt.connect(g);
+          osc.frequency.setValueAtTime(880, t);
+          osc.frequency.exponentialRampToValueAtTime(440, t + 0.12);
+          g.gain.setValueAtTime(0.04, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+          osc.connect(g);
           g.connect(musicGain);
           osc.start(t);
-          osc.stop(t + beat);
-          t += beat;
+          osc.stop(t + 0.15);
+          t += beat * 2;
         }
-      }
-      return t;
-    }
+        return t;
+      };
 
-    // Arp layer (high intensity)
-    function scheduleArp(start) {
-      const scale = [220, 261.63, 329.63, 392, 440, 523.25];
-      let t = start;
-      for (let i = 0; i < 32; i++) {
-        if (musicIntensity < 0.4) { t += beat / 2; continue; }
-        const osc = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = scale[i % scale.length] * (1 + Math.floor(i / 8) * 0.5);
-        g.gain.setValueAtTime(0.06, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-        osc.connect(g);
-        g.connect(musicGain);
-        osc.start(t);
-        osc.stop(t + 0.1);
-        t += beat / 2;
-      }
-      return t;
-    }
+      const loop = () => {
+        if (!audioCtx || loopGen !== musicLoopGen) return;
+        const playStates = state === 'PLAYING' || state === 'PAUSED'
+          || state === 'TITLE' || state === 'GAMEOVER';
+        if (!playStates) {
+          musicNodes.push(setTimeout(loop, 400));
+          return;
+        }
+        const now = audioCtx.currentTime + 0.1;
+        let end = now;
+        end = scheduleKick(end);
+        end = scheduleHat(end);
+        end = scheduleBass(end);
+        end = scheduleArp(end);
+        end = scheduleAlarm(end);
+        const delay = Math.max(400, (end - audioCtx.currentTime - 2) * 1000);
+        musicNodes.push(setTimeout(loop, delay));
+      };
+      loop();
+    },
 
-    function loop() {
-      if (!audioCtx || loopGen !== musicLoopGen) return;
-      if (state !== 'PLAYING') {
-        musicNodes.push(setTimeout(loop, 400));
-        return;
-      }
-      const now = audioCtx.currentTime + 0.1;
-      let end = now;
-      end = scheduleKick(end);
-      end = scheduleHat(end);
-      end = scheduleBass(end);
-      end = scheduleArp(end);
-      const delay = Math.max(400, (end - audioCtx.currentTime - 2) * 1000);
-      musicNodes.push(setTimeout(loop, delay));
+    async start() {
+      await resumeAudio();
+      if (!audioCtx || audioCtx.state !== 'running') return;
+      this.sync();
+      if (!this.currentTrack) this.setTrack(this.pickTrack());
+      else this.restartLoops();
+    },
+
+    stop() {
+      this.stopLoops();
+      this.currentTrack = null;
     }
-    loop();
+  };
+
+  async function startMusic() {
+    await MusicDirector.start();
   }
 
   function stopMusicLoops() {
-    musicLoopGen++;
-    musicNodes.forEach(id => clearTimeout(id));
-    musicNodes = [];
-    musicStarted = false;
+    MusicDirector.stop();
   }
 
   // ─── Game state ────────────────────────────────────────────────────────────
@@ -1285,6 +1582,59 @@
     list.push(entry);
     list.sort((a, b) => b.score - a.score);
     localStorage.setItem(HS_KEY, JSON.stringify(list.slice(0, 10)));
+  }
+
+  const leaderboardModal = document.getElementById('leaderboardModal');
+  const leaderboardList = document.getElementById('leaderboardList');
+  const leaderboardBtn = document.getElementById('leaderboardBtn');
+  const leaderboardClose = document.getElementById('leaderboardClose');
+
+  function renderLeaderboardList() {
+    if (!leaderboardList) return;
+    leaderboardList.innerHTML = '';
+    const hs = loadHighScores();
+    if (!hs.length) {
+      const li = document.createElement('li');
+      li.className = 'lb-empty';
+      li.textContent = 'No scores yet — play to rank!';
+      leaderboardList.appendChild(li);
+      return;
+    }
+    hs.forEach((e, i) => {
+      const li = document.createElement('li');
+      const rank = document.createElement('span');
+      rank.textContent = (i + 1) + '.';
+      const pts = document.createElement('span');
+      pts.textContent = e.score + '  W' + (e.wave || '?') + '  ' + e.date;
+      li.append(rank, pts);
+      leaderboardList.appendChild(li);
+    });
+  }
+
+  function openLeaderboard(e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    renderLeaderboardList();
+    leaderboardModal?.classList.add('open');
+  }
+
+  function closeLeaderboard(e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    leaderboardModal?.classList.remove('open');
+  }
+
+  if (leaderboardBtn) {
+    leaderboardBtn.addEventListener('click', openLeaderboard, true);
+    leaderboardBtn.addEventListener('touchend', openLeaderboard, { passive: false, capture: true });
+    leaderboardBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+  if (leaderboardClose) {
+    leaderboardClose.addEventListener('click', closeLeaderboard, true);
+    leaderboardClose.addEventListener('touchend', closeLeaderboard, { passive: false, capture: true });
+  }
+  if (leaderboardModal) {
+    leaderboardModal.addEventListener('click', (e) => {
+      if (e.target === leaderboardModal) closeLeaderboard(e);
+    });
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -1531,10 +1881,12 @@
     startLock = true;
     try {
       if (state === 'GAMEOVER') stopMusicLoops();
+      closeLeaderboard();
       resetGame();
       state = 'PLAYING';
       document.body.classList.remove('title-cursor', 'gameover-tap');
       document.body.classList.add('playing-ui');
+      updatePlayLayoutClasses();
       spawnWaveBatch();
       updateIosInstallBanner();
       if (isTouchDevice && !isIOSSafariBrowser) enterGameFullscreen();
@@ -1551,10 +1903,12 @@
   function endGame() {
     state = 'GAMEOVER';
     document.body.classList.remove('playing-ui');
+    updatePlayLayoutClasses();
     exitGameFullscreen();
     playSfx('gameover');
     saveHighScore(score);
     stopMusicLoops();
+    resumeAudio().then(() => MusicDirector.start());
   }
 
   // ─── Update ────────────────────────────────────────────────────────────────
@@ -1577,6 +1931,7 @@
     if (terminusActive && !terminusSpawned) {
       terminusSpawned = true;
       playSfx('terminus');
+      MusicDirector.sync();
       const a = Math.random() * Math.PI * 2;
       spawnEnemy('terminus',
         ARENA.cx + Math.cos(a) * (ARENA.r * 0.5),
@@ -1628,9 +1983,11 @@
       waveTimer = 0;
       spawnWaveBatch();
       musicIntensity = Math.min(1, musicIntensity + 0.08);
+      MusicDirector.sync();
     }
 
     musicIntensity = Math.min(1, 0.15 + wave * 0.06 + (400 - totalIntegrity()) / 500);
+    MusicDirector.sync();
 
     // Bullets
     for (let i = bulletPool.active.length - 1; i >= 0; i--) {
@@ -2259,17 +2616,9 @@
       ctx.fillText('Press F during play for fullscreen', W / 2, H / 2 + 178);
     }
 
-    // High scores
-    const hs = loadHighScores();
-    if (hs.length) {
-      ctx.fillStyle = COLORS.yellow;
-      ctx.font = '16px Courier New';
-      ctx.fillText('— HIGH SCORES —', W / 2, H / 2 + 200);
-      hs.slice(0, 5).forEach((e, i) => {
-        ctx.fillStyle = COLORS.cyan;
-        ctx.fillText((i + 1) + '. ' + e.score + '  (' + e.date + ')', W / 2, H / 2 + 225 + i * 22);
-      });
-    }
+    ctx.fillStyle = COLORS.yellow;
+    ctx.font = '14px Courier New';
+    ctx.fillText('LEADERBOARD button — local top 10', W / 2, H / 2 + 200);
   }
 
   function drawGameOver() {
@@ -2400,6 +2749,7 @@
     updateIosInstallBanner();
     updatePauseButton();
     positionPauseButton();
+    if (state === 'TITLE' && audioCtx?.state === 'running') MusicDirector.sync();
     render();
     requestAnimationFrame(loop);
   }
@@ -2411,9 +2761,12 @@
   function returnToTitle() {
     state = 'TITLE';
     document.body.classList.remove('playing-ui');
+    updatePlayLayoutClasses();
+    closeLeaderboard();
     exitGameFullscreen();
     stopMusicLoops();
     resetGame();
+    resumeAudio().then(() => MusicDirector.start());
   }
 
   if (screenTapEl) {
@@ -2455,7 +2808,8 @@ HOW TO PLAY
 • Terminus Protocol triggers when 2+ nodes hit 0% integrity OR total node
   integrity ≤ 120. A powerful Terminus elite spawns—destroy it!
 • Collect power-ups: health (+), rapid fire (»), shield (◯), node repair (◇).
-• Pause with P. Desktop fullscreen: F or FULLSCREEN button. iPhone Safari tab
+• Pause with P or PAUSE (between sticks on touch). LEADERBOARD on title/game over.
+• Desktop fullscreen: F or FULLSCREEN button. iPhone Safari tab
   cannot hide browser UI — Share → Add to Home Screen, then open from icon.
 • Press Enter/Space/click on title or game over screens.
 
